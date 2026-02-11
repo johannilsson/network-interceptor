@@ -10,7 +10,6 @@ A powerful network traffic interceptor with HTTPS support, breakpoints, and resp
 - 🔎 **Request/Response Inspection** - View headers, body, and metadata
 - ⏸️ **Breakpoints** - Pause requests and provide custom responses
 - 🗺️ **Response Mapping** - Map URLs to local files for mocking responses
-- 🎨 **Modern UI** - Clean, responsive interface with real-time updates
 
 ## Installation
 
