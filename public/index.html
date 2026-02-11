@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Network Interceptor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Archivo:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0a0e14;
+      --bg-secondary: #12171f;
+      --bg-tertiary: #1a2028;
+      --bg-hover: #232b36;
+      --border: #2d3845;
+      --text-primary: #e6e8eb;
+      --text-secondary: #8a92a3;
+      --text-dim: #5c6370;
+      --accent-primary: #00ff88;
+      --accent-secondary: #00d4ff;
+      --accent-tertiary: #ff00ff;
+      --accent-warning: #ffaa00;
+      --accent-error: #ff3366;
+      --method-get: #00d4ff;
+      --method-post: #00ff88;
+      --method-put: #ffaa00;
+      --method-delete: #ff3366;
+      --status-2xx: #00ff88;
+      --status-3xx: #00d4ff;
+      --status-4xx: #ffaa00;
+      --status-5xx: #ff3366;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      overflow: hidden;
+      height: 100vh;
+    }
+
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: var(--bg-secondary);
+      border-bottom: 2px solid var(--accent-primary);
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary), var(--accent-tertiary), var(--accent-primary));
+      background-size: 200% 100%;
+      animation: headerGlow 3s linear infinite;
+    }
+
+    @keyframes headerGlow {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      padding: 1rem 1.5rem;
+    }
+
+    .logo {
+      font-family: 'Archivo', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .logo::before {
+      content: '◆';
+      font-size: 0.8rem;
+      -webkit-text-fill-color: var(--accent-primary);
+    }
+
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      padding: 0.35rem 0.75rem;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.9); }
+    }
+
+    .header-right {
+      display: flex;
+      gap: 0.5rem;
+      padding: 1rem 1.5rem;
+    }
+
+    .header-button {
+      padding: 0.5rem 1rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .header-button:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+
+    .header-button.primary {
+      background: var(--accent-primary);
+      color: var(--bg-primary);
+      border-color: var(--accent-primary);
+    }
+
+    .header-button.primary:hover {
+      background: transparent;
+      color: var(--accent-primary);
+    }
+
+    /* Main Content */
+    .main-content {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 320px;
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-header {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-tertiary);
+    }
+
+    .filter-input {
+      width: 100%;
+      padding: 0.6rem;
+      background: var(--bg-primary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .filter-input:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 1px var(--accent-primary);
+    }
+
+    .filter-input::placeholder {
+      color: var(--text-dim);
+    }
+
+    .traffic-list {
+      flex: 1;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-primary) var(--bg-tertiary);
+    }
+
+    .traffic-list::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .traffic-list::-webkit-scrollbar-track {
+      background: var(--bg-tertiary);
+    }
+
+    .traffic-list::-webkit-scrollbar-thumb {
+      background: var(--accent-primary);
+      border-radius: 4px;
+    }
+
+    .traffic-item {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.15s;
+      position: relative;
+      animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateX(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .traffic-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: transparent;
+      transition: all 0.2s;
+    }
+
+    .traffic-item:hover {
+      background: var(--bg-hover);
+    }
+
+    .traffic-item:hover::before {
+      background: var(--accent-primary);
+    }
+
+    .traffic-item.selected {
+      background: var(--bg-tertiary);
+    }
+
+    .traffic-item.selected::before {
+      background: var(--accent-primary);
+    }
+
+    .traffic-item.breakpoint::after {
+      content: '●';
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--accent-error);
+      font-size: 1.2rem;
+      animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .traffic-method {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 0.15rem 0.4rem;
+      margin-right: 0.5rem;
+      border-radius: 2px;
+      letter-spacing: 0.05em;
+    }
+
+    .method-GET { background: var(--method-get); color: var(--bg-primary); }
+    .method-POST { background: var(--method-post); color: var(--bg-primary); }
+    .method-PUT { background: var(--method-put); color: var(--bg-primary); }
+    .method-DELETE { background: var(--method-delete); color: var(--bg-primary); }
+
+    .traffic-url {
+      font-size: 0.8rem;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+      word-break: break-all;
+    }
+
+    .traffic-meta {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      margin-top: 0.3rem;
+    }
+
+    .traffic-status {
+      font-weight: 600;
+    }
+
+    .status-2xx { color: var(--status-2xx); }
+    .status-3xx { color: var(--status-3xx); }
+    .status-4xx { color: var(--status-4xx); }
+    .status-5xx { color: var(--status-5xx); }
+
+    /* Detail Panel */
+    .detail-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-primary);
+    }
+
+    .detail-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-secondary);
+    }
+
+    .detail-tab {
+      padding: 0.75rem 1.5rem;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .detail-tab:hover {
+      color: var(--text-primary);
+      background: var(--bg-tertiary);
+    }
+
+    .detail-tab.active {
+      color: var(--accent-primary);
+      border-bottom-color: var(--accent-primary);
+      background: var(--bg-primary);
+    }
+
+    .detail-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-primary) var(--bg-tertiary);
+    }
+
+    .detail-content::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .detail-content::-webkit-scrollbar-track {
+      background: var(--bg-tertiary);
+    }
+
+    .detail-content::-webkit-scrollbar-thumb {
+      background: var(--accent-primary);
+      border-radius: 4px;
+    }
+
+    .detail-section {
+      margin-bottom: 2rem;
+    }
+
+    .detail-section h3 {
+      font-family: 'Archivo', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--accent-secondary);
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+    }
+
+    .detail-label {
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .detail-value {
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .code-block {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1rem;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .empty-state-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      opacity: 0.3;
+    }
+
+    .empty-state-text {
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* Modal */
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(10, 14, 20, 0.9);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-secondary);
+      border: 2px solid var(--accent-primary);
+      border-radius: 8px;
+      width: 90%;
+      max-width: 600px;
+      max-height: 80vh;
+      overflow-y: auto;
+      animation: modalSlide 0.3s ease-out;
+    }
+
+    @keyframes modalSlide {
+      from {
+        opacity: 0;
+        transform: translateY(-30px) scale(0.95);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-family: 'Archivo', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-close:hover {
+      color: var(--accent-error);
+      transform: rotate(90deg);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.75rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      outline: none;
+      transition: all 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--accent-primary);
+      box-shadow: 0 0 0 2px rgba(0, 255, 136, 0.1);
+    }
+
+    .form-textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 0.75rem;
+      justify-content: flex-end;
+    }
+
+    .button {
+      padding: 0.75rem 1.5rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .button:hover {
+      background: var(--bg-hover);
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+      transform: translateY(-2px);
+    }
+
+    .button.primary {
+      background: var(--accent-primary);
+      color: var(--bg-primary);
+      border-color: var(--accent-primary);
+    }
+
+    .button.primary:hover {
+      background: transparent;
+      color: var(--accent-primary);
+    }
+
+    .breakpoint-list {
+      list-style: none;
+      margin-top: 1rem;
+    }
+
+    .breakpoint-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      margin-bottom: 0.5rem;
+      border-radius: 4px;
+    }
+
+    .breakpoint-pattern {
+      font-size: 0.85rem;
+      color: var(--accent-primary);
+    }
+
+    .breakpoint-remove {
+      background: none;
+      border: none;
+      color: var(--accent-error);
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 0.25rem 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .breakpoint-remove:hover {
+      color: var(--text-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">Network Interceptor</div>
+        <div class="status-indicator">
+          <div class="status-dot"></div>
+          <span>PROXY ACTIVE</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="header-button" onclick="openBreakpointsModal()">Breakpoints</button>
+        <button class="header-button" onclick="openMappingsModal()">Mappings</button>
+        <button class="header-button primary" onclick="downloadCert()">Download CA Cert</button>
+        <button class="header-button" onclick="clearTraffic()">Clear</button>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <input type="text" class="filter-input" id="filterInput" placeholder="Filter URL..." oninput="filterTraffic()">
+        </div>
+        <div class="traffic-list" id="trafficList">
+          <div class="empty-state">
+            <div class="empty-state-icon">⊗</div>
+            <div class="empty-state-text">
+              Configure your browser/system to use<br>
+              <strong>localhost:8888</strong> as proxy<br>
+              to start intercepting traffic
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Detail Panel -->
+      <main class="detail-panel">
+        <div class="detail-tabs">
+          <button class="detail-tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+          <button class="detail-tab" data-tab="request" onclick="switchTab('request')">Request</button>
+          <button class="detail-tab" data-tab="response" onclick="switchTab('response')">Response</button>
+        </div>
+        <div class="detail-content" id="detailContent">
+          <div class="empty-state">
+            <div class="empty-state-icon">◇</div>
+            <div class="empty-state-text">
+              Select a request to view details
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Breakpoints Modal -->
+  <div class="modal" id="breakpointsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Breakpoints</h2>
+        <button class="modal-close" onclick="closeModal('breakpointsModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">URL Pattern</label>
+          <input type="text" class="form-input" id="breakpointPattern" placeholder="e.g., *api.example.com* or /api/users">
+        </div>
+        <button class="button primary" onclick="addBreakpoint()">Add Breakpoint</button>
+        <ul class="breakpoint-list" id="breakpointList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mappings Modal -->
+  <div class="modal" id="mappingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Response Mappings</h2>
+        <button class="modal-close" onclick="closeModal('mappingsModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">URL Pattern</label>
+          <input type="text" class="form-input" id="mappingPattern" placeholder="e.g., *api.example.com/data*">
+        </div>
+        <div class="form-group">
+          <label class="form-label">File Path (absolute)</label>
+          <input type="text" class="form-input" id="mappingFilePath" placeholder="e.g., /home/user/mock-response.json">
+        </div>
+        <button class="button primary" onclick="addMapping()">Add Mapping</button>
+        <ul class="breakpoint-list" id="mappingList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Breakpoint Action Modal -->
+  <div class="modal" id="breakpointActionModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Breakpoint Hit</h2>
+        <button class="modal-close" onclick="closeModal('breakpointActionModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="breakpointRequestDetails"></div>
+        <div class="form-group">
+          <label class="form-label">Custom Response Body (optional)</label>
+          <textarea class="form-input form-textarea" id="customResponseBody" placeholder='{"message": "Custom response"}'></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status Code (optional)</label>
+          <input type="number" class="form-input" id="customStatusCode" placeholder="200">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="button" onclick="continueRequest()">Continue Original</button>
+        <button class="button primary" onclick="respondCustom()">Respond Custom</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

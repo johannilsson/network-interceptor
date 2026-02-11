@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# CA Certificates (regenerated on startup)
+ca-cert.pem
+ca-key.pem
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

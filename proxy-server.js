@@ -1,0 +1,422 @@
+const http = require('http');
+const https = require('https');
+const net = require('net');
+const url = require('url');
+const fs = require('fs');
+const path = require('path');
+const forge = require('node-forge');
+
+// Certificate cache
+const certCache = new Map();
+
+// Generate CA certificate if it doesn't exist
+function generateCACertificate() {
+  const certPath = path.join(__dirname, 'ca-cert.pem');
+  const keyPath = path.join(__dirname, 'ca-key.pem');
+
+  if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    return {
+      cert: fs.readFileSync(certPath, 'utf8'),
+      key: fs.readFileSync(keyPath, 'utf8')
+    };
+  }
+
+  console.log('Generating CA certificate...');
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = '01';
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date();
+  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
+  
+  const attrs = [
+    { name: 'commonName', value: 'Network Interceptor CA' },
+    { name: 'countryName', value: 'US' },
+    { name: 'organizationName', value: 'Network Interceptor' }
+  ];
+  
+  cert.setSubject(attrs);
+  cert.setIssuer(attrs);
+  cert.setExtensions([
+    { name: 'basicConstraints', cA: true },
+    { name: 'keyUsage', keyCertSign: true, digitalSignature: true, keyEncipherment: true }
+  ]);
+  
+  cert.sign(keys.privateKey, forge.md.sha256.create());
+  
+  const certPem = forge.pki.certificateToPem(cert);
+  const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
+  
+  fs.writeFileSync(certPath, certPem);
+  fs.writeFileSync(keyPath, keyPem);
+  
+  console.log('CA certificate generated and saved.');
+  console.log('Please install ca-cert.pem as a trusted root certificate on your system.');
+  
+  return { cert: certPem, key: keyPem };
+}
+
+// Generate certificate for specific hostname
+function generateCertificate(hostname, caCert, caKey) {
+  if (certCache.has(hostname)) {
+    return certCache.get(hostname);
+  }
+
+  const keys = forge.pki.rsa.generateKeyPair(2048);
+  const cert = forge.pki.createCertificate();
+  
+  cert.publicKey = keys.publicKey;
+  cert.serialNumber = Math.floor(Math.random() * 100000).toString();
+  cert.validity.notBefore = new Date();
+  cert.validity.notAfter = new Date();
+  cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 1);
+  
+  cert.setSubject([
+    { name: 'commonName', value: hostname }
+  ]);
+  
+  const caKeyObj = forge.pki.privateKeyFromPem(caKey);
+  const caCertObj = forge.pki.certificateFromPem(caCert);
+  
+  cert.setIssuer(caCertObj.subject.attributes);
+  cert.setExtensions([
+    { name: 'subjectAltName', altNames: [{ type: 2, value: hostname }] },
+    { name: 'keyUsage', digitalSignature: true, keyEncipherment: true }
+  ]);
+  
+  cert.sign(caKeyObj, forge.md.sha256.create());
+  
+  const result = {
+    cert: forge.pki.certificateToPem(cert),
+    key: forge.pki.privateKeyToPem(keys.privateKey)
+  };
+  
+  certCache.set(hostname, result);
+  return result;
+}
+
+class ProxyServer {
+  constructor(port = 8888) {
+    this.port = port;
+    this.webSocketClients = new Set();
+    this.breakpoints = new Map(); // URL pattern -> breakpoint config
+    this.mappings = new Map(); // URL pattern -> file path
+    this.requestQueue = new Map(); // Request ID -> request data
+    this.requestIdCounter = 0;
+    
+    const ca = generateCACertificate();
+    this.caCert = ca.cert;
+    this.caKey = ca.key;
+  }
+
+  start() {
+    // HTTP proxy server
+    this.server = http.createServer((req, res) => {
+      this.handleHttpRequest(req, res);
+    });
+
+    // Handle CONNECT for HTTPS
+    this.server.on('connect', (req, clientSocket, head) => {
+      this.handleConnect(req, clientSocket, head);
+    });
+
+    this.server.listen(this.port, () => {
+      console.log(`Proxy server running on port ${this.port}`);
+    });
+  }
+
+  addWebSocketClient(ws) {
+    this.webSocketClients.add(ws);
+    ws.on('close', () => this.webSocketClients.delete(ws));
+  }
+
+  broadcast(data) {
+    const message = JSON.stringify(data);
+    this.webSocketClients.forEach(ws => {
+      if (ws.readyState === 1) { // OPEN
+        ws.send(message);
+      }
+    });
+  }
+
+  async handleHttpRequest(clientReq, clientRes) {
+    const requestId = ++this.requestIdCounter;
+    const requestUrl = clientReq.url;
+    const fullUrl = `http://${clientReq.headers.host}${requestUrl}`;
+    
+    const requestData = {
+      id: requestId,
+      method: clientReq.method,
+      url: fullUrl,
+      headers: { ...clientReq.headers },
+      timestamp: new Date().toISOString(),
+      protocol: 'http'
+    };
+
+    // Collect request body
+    const requestBody = await this.collectBody(clientReq);
+    requestData.body = requestBody;
+
+    // Check for breakpoint
+    const breakpoint = this.checkBreakpoint(fullUrl);
+    if (breakpoint) {
+      this.requestQueue.set(requestId, { requestData, clientRes, breakpoint });
+      this.broadcast({
+        type: 'breakpoint',
+        request: requestData
+      });
+      return;
+    }
+
+    // Check for mapping
+    const mapping = this.checkMapping(fullUrl);
+    if (mapping) {
+      this.sendMappedResponse(clientRes, mapping, requestData);
+      return;
+    }
+
+    this.forwardRequest(requestData, clientRes);
+  }
+
+  async forwardRequest(requestData, clientRes) {
+    const parsedUrl = url.parse(requestData.url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.path,
+      method: requestData.method,
+      headers: requestData.headers
+    };
+
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const proxyReq = protocol.request(options, (proxyRes) => {
+      const responseData = {
+        id: requestData.id,
+        status: proxyRes.statusCode,
+        statusText: proxyRes.statusMessage,
+        headers: { ...proxyRes.headers },
+        timestamp: new Date().toISOString()
+      };
+
+      this.collectBody(proxyRes).then(body => {
+        responseData.body = body;
+        
+        this.broadcast({
+          type: 'traffic',
+          request: requestData,
+          response: responseData
+        });
+
+        clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+        clientRes.end(body);
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('Proxy request error:', err);
+      clientRes.writeHead(502);
+      clientRes.end('Bad Gateway');
+    });
+
+    if (requestData.body) {
+      proxyReq.write(requestData.body);
+    }
+    proxyReq.end();
+  }
+
+  handleConnect(req, clientSocket, head) {
+    const { hostname, port } = this.parseHostPort(req.url);
+    const requestId = ++this.requestIdCounter;
+
+    // Generate certificate for this hostname
+    const { cert, key } = generateCertificate(hostname, this.caCert, this.caKey);
+
+    // Create HTTPS server for this connection
+    const serverOptions = {
+      key: key,
+      cert: cert,
+      SNICallback: (servername, cb) => {
+        const { cert, key } = generateCertificate(servername, this.caCert, this.caKey);
+        cb(null, require('tls').createSecureContext({ key, cert }));
+      }
+    };
+
+    const httpsServer = https.createServer(serverOptions, (req, res) => {
+      this.handleHttpsRequest(req, res, hostname);
+    });
+
+    clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+    
+    httpsServer.emit('connection', clientSocket);
+  }
+
+  async handleHttpsRequest(clientReq, clientRes, hostname) {
+    const requestId = ++this.requestIdCounter;
+    const fullUrl = `https://${hostname}${clientReq.url}`;
+    
+    const requestData = {
+      id: requestId,
+      method: clientReq.method,
+      url: fullUrl,
+      headers: { ...clientReq.headers },
+      timestamp: new Date().toISOString(),
+      protocol: 'https'
+    };
+
+    const requestBody = await this.collectBody(clientReq);
+    requestData.body = requestBody;
+
+    // Check for breakpoint
+    const breakpoint = this.checkBreakpoint(fullUrl);
+    if (breakpoint) {
+      this.requestQueue.set(requestId, { requestData, clientRes, breakpoint });
+      this.broadcast({
+        type: 'breakpoint',
+        request: requestData
+      });
+      return;
+    }
+
+    // Check for mapping
+    const mapping = this.checkMapping(fullUrl);
+    if (mapping) {
+      this.sendMappedResponse(clientRes, mapping, requestData);
+      return;
+    }
+
+    this.forwardRequest(requestData, clientRes);
+  }
+
+  parseHostPort(hostString) {
+    const [hostname, port] = hostString.split(':');
+    return { hostname, port: port || 443 };
+  }
+
+  collectBody(stream) {
+    return new Promise((resolve) => {
+      const chunks = [];
+      stream.on('data', chunk => chunks.push(chunk));
+      stream.on('end', () => {
+        const buffer = Buffer.concat(chunks);
+        resolve(buffer.length > 0 ? buffer : null);
+      });
+      stream.on('error', () => resolve(null));
+    });
+  }
+
+  checkBreakpoint(url) {
+    for (const [pattern, config] of this.breakpoints) {
+      if (this.matchPattern(url, pattern)) {
+        return config;
+      }
+    }
+    return null;
+  }
+
+  checkMapping(url) {
+    for (const [pattern, filePath] of this.mappings) {
+      if (this.matchPattern(url, pattern)) {
+        return filePath;
+      }
+    }
+    return null;
+  }
+
+  matchPattern(url, pattern) {
+    if (pattern.startsWith('*')) {
+      return url.includes(pattern.slice(1));
+    }
+    return url.includes(pattern);
+  }
+
+  sendMappedResponse(clientRes, filePath, requestData) {
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        clientRes.writeHead(404);
+        clientRes.end('Mapped file not found');
+        return;
+      }
+
+      const responseData = {
+        id: requestData.id,
+        status: 200,
+        statusText: 'OK (Mapped)',
+        headers: { 'content-type': 'application/json' },
+        body: data,
+        timestamp: new Date().toISOString(),
+        mapped: true
+      };
+
+      this.broadcast({
+        type: 'traffic',
+        request: requestData,
+        response: responseData
+      });
+
+      clientRes.writeHead(200, { 'content-type': 'application/json' });
+      clientRes.end(data);
+    });
+  }
+
+  continueRequest(requestId, customRequest) {
+    const queued = this.requestQueue.get(requestId);
+    if (!queued) return;
+
+    this.requestQueue.delete(requestId);
+    const { requestData, clientRes } = queued;
+
+    if (customRequest) {
+      Object.assign(requestData, customRequest);
+    }
+
+    this.forwardRequest(requestData, clientRes);
+  }
+
+  respondWithCustom(requestId, customResponse) {
+    const queued = this.requestQueue.get(requestId);
+    if (!queued) return;
+
+    this.requestQueue.delete(requestId);
+    const { requestData, clientRes } = queued;
+
+    const responseData = {
+      id: requestId,
+      status: customResponse.status || 200,
+      statusText: customResponse.statusText || 'OK',
+      headers: customResponse.headers || {},
+      body: customResponse.body,
+      timestamp: new Date().toISOString(),
+      custom: true
+    };
+
+    this.broadcast({
+      type: 'traffic',
+      request: requestData,
+      response: responseData
+    });
+
+    clientRes.writeHead(responseData.status, responseData.headers);
+    clientRes.end(responseData.body);
+  }
+
+  setBreakpoint(pattern, config) {
+    this.breakpoints.set(pattern, config);
+  }
+
+  removeBreakpoint(pattern) {
+    this.breakpoints.delete(pattern);
+  }
+
+  setMapping(pattern, filePath) {
+    this.mappings.set(pattern, filePath);
+  }
+
+  removeMapping(pattern) {
+    this.mappings.delete(pattern);
+  }
+}
+
+module.exports = ProxyServer;
