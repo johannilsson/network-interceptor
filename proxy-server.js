@@ -134,7 +134,28 @@ class ProxyServer {
   }
 
   broadcast(data) {
-    const message = JSON.stringify(data);
+    // Clone data to avoid mutating original
+    const broadcastData = { ...data };
+
+    // Process request body if exists
+    if (broadcastData.request?.body) {
+      const processed = this.processBodyForBroadcast(
+        broadcastData.request.body,
+        broadcastData.request.headers
+      );
+      broadcastData.request = { ...broadcastData.request, ...processed };
+    }
+
+    // Process response body if exists
+    if (broadcastData.response?.body) {
+      const processed = this.processBodyForBroadcast(
+        broadcastData.response.body,
+        broadcastData.response.headers
+      );
+      broadcastData.response = { ...broadcastData.response, ...processed };
+    }
+
+    const message = JSON.stringify(broadcastData);
     this.webSocketClients.forEach(ws => {
       if (ws.readyState === 1) { // OPEN
         ws.send(message);
@@ -352,6 +373,78 @@ class ProxyServer {
       });
       stream.on('error', () => resolve(null));
     });
+  }
+
+  isJsonContentType(headers) {
+    const contentType = (headers['content-type'] || '').toLowerCase();
+    return contentType.includes('application/json') ||
+           contentType.includes('+json') ||
+           contentType.includes('text/json');
+  }
+
+  isBinaryContentType(headers) {
+    const contentType = (headers['content-type'] || '').toLowerCase();
+    const binaryTypes = [
+      'image/', 'video/', 'audio/', 'application/octet-stream',
+      'application/pdf', 'application/zip', 'font/'
+    ];
+    return binaryTypes.some(type => contentType.includes(type));
+  }
+
+  processBodyForBroadcast(body, headers) {
+    // Handle null/empty bodies
+    if (!body || body.length === 0) {
+      return { body: null };
+    }
+
+    // Convert Buffer to string (defensive: handle case where body is already string)
+    const bodyString = Buffer.isBuffer(body) ? body.toString('utf8') : String(body);
+
+    // Handle binary content - encode as base64
+    if (this.isBinaryContentType(headers)) {
+      return {
+        body: Buffer.isBuffer(body) ? body.toString('base64') : bodyString,
+        bodyMeta: {
+          contentType: 'binary',
+          encoding: 'base64',
+          originalSize: body.length
+        }
+      };
+    }
+
+    // Handle JSON content - parse and prettify
+    if (this.isJsonContentType(headers)) {
+      try {
+        const parsed = JSON.parse(bodyString);
+        return {
+          body: JSON.stringify(parsed, null, 2),
+          bodyMeta: {
+            contentType: 'json',
+            encoding: 'utf8',
+            originalSize: body.length
+          }
+        };
+      } catch (error) {
+        // Malformed JSON - fallback to plain text
+        return {
+          body: bodyString,
+          bodyMeta: {
+            contentType: 'text',
+            encoding: 'utf8',
+            parseError: error.message
+          }
+        };
+      }
+    }
+
+    // Default: treat as plain text
+    return {
+      body: bodyString,
+      bodyMeta: {
+        contentType: 'text',
+        encoding: 'utf8'
+      }
+    };
   }
 
   checkBreakpoint(url) {

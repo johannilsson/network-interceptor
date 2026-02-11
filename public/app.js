@@ -199,9 +199,7 @@ function renderDetailPanel() {
       .map(([key, value]) => `<div class="detail-label">${key}:</div><div class="detail-value">${value}</div>`)
       .join('');
     
-    const bodyText = request.body ? 
-      (typeof request.body === 'string' ? request.body : tryFormatJSON(request.body)) : 
-      'No body';
+    const bodyText = request.body || 'No body';
     
     content.innerHTML = `
       <div class="detail-section">
@@ -229,9 +227,7 @@ function renderDetailPanel() {
       .map(([key, value]) => `<div class="detail-label">${key}:</div><div class="detail-value">${value}</div>`)
       .join('');
     
-    const bodyText = response.body ? 
-      (typeof response.body === 'string' ? response.body : tryFormatJSON(response.body)) : 
-      'No body';
+    const bodyText = response.body || 'No body';
     
     content.innerHTML = `
       <div class="detail-section">
@@ -244,23 +240,6 @@ function renderDetailPanel() {
         <div class="code-block">${escapeHtml(bodyText)}</div>
       </div>
     `;
-  }
-}
-
-function tryFormatJSON(data) {
-  try {
-    if (Buffer.isBuffer(data)) {
-      const str = data.toString('utf8');
-      const parsed = JSON.parse(str);
-      return JSON.stringify(parsed, null, 2);
-    }
-    if (typeof data === 'object') {
-      return JSON.stringify(data, null, 2);
-    }
-    const parsed = JSON.parse(data);
-    return JSON.stringify(parsed, null, 2);
-  } catch {
-    return data.toString();
   }
 }
 
