@@ -105,7 +105,8 @@ class ProxyServer {
     this.mappings = new Map(); // URL pattern -> file path
     this.requestQueue = new Map(); // Request ID -> request data
     this.requestIdCounter = 0;
-    
+    this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
+
     const ca = generateCACertificate();
     this.caCert = ca.cert;
     this.caKey = ca.key;
@@ -162,7 +163,30 @@ class ProxyServer {
     // Check for breakpoint
     const breakpoint = this.checkBreakpoint(fullUrl);
     if (breakpoint) {
-      this.requestQueue.set(requestId, { requestData, clientRes, breakpoint });
+      // Check if there are WebSocket clients connected
+      const hasClients = Array.from(this.webSocketClients).some(ws => ws.readyState === 1);
+
+      if (!hasClients) {
+        // No clients connected, auto-continue immediately
+        console.log(`No WebSocket clients connected, auto-continuing request ${requestId}`);
+        this.forwardRequest(requestData, clientRes);
+        return;
+      }
+
+      // Set timeout to auto-continue if no action is taken
+      const timeoutId = setTimeout(() => {
+        console.log(`Breakpoint timeout for request ${requestId}, auto-continuing`);
+        this.continueRequest(requestId);
+      }, this.breakpointTimeout);
+
+      this.requestQueue.set(requestId, {
+        requestData,
+        clientRes,
+        breakpoint,
+        timeoutId,
+        timestamp: Date.now()
+      });
+
       this.broadcast({
         type: 'breakpoint',
         request: requestData
@@ -272,7 +296,30 @@ class ProxyServer {
     // Check for breakpoint
     const breakpoint = this.checkBreakpoint(fullUrl);
     if (breakpoint) {
-      this.requestQueue.set(requestId, { requestData, clientRes, breakpoint });
+      // Check if there are WebSocket clients connected
+      const hasClients = Array.from(this.webSocketClients).some(ws => ws.readyState === 1);
+
+      if (!hasClients) {
+        // No clients connected, auto-continue immediately
+        console.log(`No WebSocket clients connected, auto-continuing request ${requestId}`);
+        this.forwardRequest(requestData, clientRes);
+        return;
+      }
+
+      // Set timeout to auto-continue if no action is taken
+      const timeoutId = setTimeout(() => {
+        console.log(`Breakpoint timeout for request ${requestId}, auto-continuing`);
+        this.continueRequest(requestId);
+      }, this.breakpointTimeout);
+
+      this.requestQueue.set(requestId, {
+        requestData,
+        clientRes,
+        breakpoint,
+        timeoutId,
+        timestamp: Date.now()
+      });
+
       this.broadcast({
         type: 'breakpoint',
         request: requestData
@@ -326,9 +373,20 @@ class ProxyServer {
   }
 
   matchPattern(url, pattern) {
-    if (pattern.startsWith('*')) {
-      return url.includes(pattern.slice(1));
+    // Handle wildcard patterns (e.g., *api.example.com*, *api*, api.example.com*)
+    if (pattern.includes('*')) {
+      // Convert wildcard pattern to regex
+      // Escape special regex characters except *
+      const regexPattern = pattern
+        .split('*')
+        .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('.*');
+
+      const regex = new RegExp(regexPattern);
+      return regex.test(url);
     }
+
+    // Exact substring match for non-wildcard patterns
     return url.includes(pattern);
   }
 
@@ -363,7 +421,15 @@ class ProxyServer {
 
   continueRequest(requestId, customRequest) {
     const queued = this.requestQueue.get(requestId);
-    if (!queued) return;
+    if (!queued) {
+      console.warn(`Request ${requestId} not found in queue`);
+      return;
+    }
+
+    // Clear timeout if it exists
+    if (queued.timeoutId) {
+      clearTimeout(queued.timeoutId);
+    }
 
     this.requestQueue.delete(requestId);
     const { requestData, clientRes } = queued;
@@ -372,12 +438,28 @@ class ProxyServer {
       Object.assign(requestData, customRequest);
     }
 
-    this.forwardRequest(requestData, clientRes);
+    try {
+      this.forwardRequest(requestData, clientRes);
+    } catch (error) {
+      console.error(`Error forwarding request ${requestId}:`, error);
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(500);
+        clientRes.end('Internal Server Error: ' + error.message);
+      }
+    }
   }
 
   respondWithCustom(requestId, customResponse) {
     const queued = this.requestQueue.get(requestId);
-    if (!queued) return;
+    if (!queued) {
+      console.warn(`Request ${requestId} not found in queue`);
+      return;
+    }
+
+    // Clear timeout if it exists
+    if (queued.timeoutId) {
+      clearTimeout(queued.timeoutId);
+    }
 
     this.requestQueue.delete(requestId);
     const { requestData, clientRes } = queued;
@@ -400,6 +482,23 @@ class ProxyServer {
 
     clientRes.writeHead(responseData.status, responseData.headers);
     clientRes.end(responseData.body);
+  }
+
+  cleanupRequest(requestId, error) {
+    const queued = this.requestQueue.get(requestId);
+    if (!queued) return;
+
+    if (queued.timeoutId) {
+      clearTimeout(queued.timeoutId);
+    }
+
+    this.requestQueue.delete(requestId);
+    const { clientRes } = queued;
+
+    if (!clientRes.headersSent) {
+      clientRes.writeHead(500);
+      clientRes.end('Internal Server Error: ' + error.message);
+    }
   }
 
   setBreakpoint(pattern, config) {
