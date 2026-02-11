@@ -6,6 +6,9 @@ package-lock.json
 ca-cert.pem
 ca-key.pem
 
+# User-specific breakpoints
+breakpoints.json
+
 # Environment variables
 .env
 .env.local

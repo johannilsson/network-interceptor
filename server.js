@@ -28,10 +28,14 @@ wss.on('connection', (ws) => {
   console.log('WebSocket client connected');
   proxyServer.addWebSocketClient(ws);
 
+  // Send initial breakpoints list
+  const breakpoints = proxyServer.getBreakpoints();
+  ws.send(JSON.stringify({ type: 'breakpointsList', breakpoints }));
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
-      
+
       switch (data.type) {
         case 'continue':
           proxyServer.continueRequest(data.requestId, data.customRequest);
@@ -40,12 +44,52 @@ wss.on('connection', (ws) => {
           proxyServer.respondWithCustom(data.requestId, data.customResponse);
           break;
         case 'setBreakpoint':
-          proxyServer.setBreakpoint(data.pattern, data.config);
-          ws.send(JSON.stringify({ type: 'breakpointSet', pattern: data.pattern }));
+          const config = proxyServer.setBreakpoint(data.pattern, data.config);
+          // Broadcast to all clients
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'breakpointSet', pattern: data.pattern, config }));
+            }
+          });
           break;
         case 'removeBreakpoint':
           proxyServer.removeBreakpoint(data.pattern);
-          ws.send(JSON.stringify({ type: 'breakpointRemoved', pattern: data.pattern }));
+          // Broadcast to all clients
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'breakpointRemoved', pattern: data.pattern }));
+            }
+          });
+          break;
+        case 'toggleBreakpoint':
+          const toggledConfig = proxyServer.toggleBreakpoint(data.pattern, data.enabled);
+          if (toggledConfig) {
+            // Broadcast to all clients
+            wss.clients.forEach(client => {
+              if (client.readyState === 1) {
+                client.send(JSON.stringify({ type: 'breakpointToggled', pattern: data.pattern, enabled: data.enabled, config: toggledConfig }));
+              }
+            });
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'Breakpoint not found' }));
+          }
+          break;
+        case 'updateBreakpoint':
+          const result = proxyServer.updateBreakpoint(data.oldPattern, data.newConfig);
+          if (result) {
+            // Broadcast to all clients
+            wss.clients.forEach(client => {
+              if (client.readyState === 1) {
+                client.send(JSON.stringify({ type: 'breakpointUpdated', oldPattern: result.oldPattern, newPattern: result.newPattern, config: result.config }));
+              }
+            });
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'Breakpoint not found' }));
+          }
+          break;
+        case 'getBreakpoints':
+          const allBreakpoints = proxyServer.getBreakpoints();
+          ws.send(JSON.stringify({ type: 'breakpointsList', breakpoints: allBreakpoints }));
           break;
         case 'setMapping':
           proxyServer.setMapping(data.pattern, data.filePath);
@@ -58,6 +102,7 @@ wss.on('connection', (ws) => {
       }
     } catch (err) {
       console.error('WebSocket message error:', err);
+      ws.send(JSON.stringify({ type: 'error', message: err.message }));
     }
   });
 });

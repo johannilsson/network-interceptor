@@ -106,10 +106,13 @@ class ProxyServer {
     this.requestQueue = new Map(); // Request ID -> request data
     this.requestIdCounter = 0;
     this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
+    this.breakpointsFilePath = path.join(__dirname, 'breakpoints.json');
 
     const ca = generateCACertificate();
     this.caCert = ca.cert;
     this.caKey = ca.key;
+
+    this.loadBreakpointsFromFile();
   }
 
   start() {
@@ -449,7 +452,7 @@ class ProxyServer {
 
   checkBreakpoint(url) {
     for (const [pattern, config] of this.breakpoints) {
-      if (this.matchPattern(url, pattern)) {
+      if (this.matchPattern(url, pattern) && config.enabled !== false) {
         return config;
       }
     }
@@ -594,12 +597,109 @@ class ProxyServer {
     }
   }
 
-  setBreakpoint(pattern, config) {
-    this.breakpoints.set(pattern, config);
+  loadBreakpointsFromFile() {
+    try {
+      if (fs.existsSync(this.breakpointsFilePath)) {
+        const data = fs.readFileSync(this.breakpointsFilePath, 'utf8');
+        const breakpointsArray = JSON.parse(data);
+
+        for (const breakpoint of breakpointsArray) {
+          if (!breakpoint.pattern) continue;
+
+          // Apply defaults
+          const config = {
+            pattern: breakpoint.pattern,
+            name: breakpoint.name || undefined,
+            enabled: breakpoint.enabled !== false,
+            createdAt: breakpoint.createdAt || new Date().toISOString(),
+            lastModified: breakpoint.lastModified || new Date().toISOString()
+          };
+
+          this.breakpoints.set(breakpoint.pattern, config);
+        }
+
+        console.log(`Loaded ${this.breakpoints.size} breakpoints from file`);
+      }
+    } catch (error) {
+      console.error('Error loading breakpoints from file:', error.message);
+      // Continue with empty state
+    }
+  }
+
+  saveBreakpointsToFile() {
+    try {
+      const breakpointsArray = Array.from(this.breakpoints.values());
+      const data = JSON.stringify(breakpointsArray, null, 2);
+      fs.writeFileSync(this.breakpointsFilePath, data, 'utf8');
+    } catch (error) {
+      console.error('Error saving breakpoints to file:', error.message);
+    }
+  }
+
+  setBreakpoint(pattern, config = {}) {
+    const existing = this.breakpoints.get(pattern);
+    const now = new Date().toISOString();
+
+    const breakpointConfig = {
+      pattern,
+      name: config.name !== undefined ? config.name : (existing?.name || undefined),
+      enabled: config.enabled !== undefined ? config.enabled : (existing?.enabled !== false),
+      createdAt: existing?.createdAt || now,
+      lastModified: now
+    };
+
+    this.breakpoints.set(pattern, breakpointConfig);
+    this.saveBreakpointsToFile();
+
+    return breakpointConfig;
   }
 
   removeBreakpoint(pattern) {
     this.breakpoints.delete(pattern);
+    this.saveBreakpointsToFile();
+  }
+
+  toggleBreakpoint(pattern, enabled) {
+    const existing = this.breakpoints.get(pattern);
+    if (!existing) return null;
+
+    existing.enabled = enabled;
+    existing.lastModified = new Date().toISOString();
+
+    this.breakpoints.set(pattern, existing);
+    this.saveBreakpointsToFile();
+
+    return existing;
+  }
+
+  updateBreakpoint(oldPattern, newConfig) {
+    const existing = this.breakpoints.get(oldPattern);
+    if (!existing) return null;
+
+    const now = new Date().toISOString();
+    const newPattern = newConfig.pattern || oldPattern;
+
+    const updatedConfig = {
+      pattern: newPattern,
+      name: newConfig.name !== undefined ? newConfig.name : existing.name,
+      enabled: newConfig.enabled !== undefined ? newConfig.enabled : existing.enabled,
+      createdAt: existing.createdAt,
+      lastModified: now
+    };
+
+    // If pattern changed, remove old pattern and add new one
+    if (newPattern !== oldPattern) {
+      this.breakpoints.delete(oldPattern);
+    }
+
+    this.breakpoints.set(newPattern, updatedConfig);
+    this.saveBreakpointsToFile();
+
+    return { oldPattern, newPattern, config: updatedConfig };
+  }
+
+  getBreakpoints() {
+    return Array.from(this.breakpoints.values());
   }
 
   setMapping(pattern, filePath) {

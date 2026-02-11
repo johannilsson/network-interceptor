@@ -5,6 +5,7 @@ let currentTab = 'overview';
 let breakpointRequest = null;
 let breakpoints = new Map();
 let mappings = new Map();
+let editingPattern = null;
 
 // Initialize WebSocket connection
 function initWebSocket() {
@@ -40,10 +41,41 @@ function handleWebSocketMessage(data) {
       handleBreakpoint(data.request);
       break;
     case 'breakpointSet':
+      breakpoints.set(data.pattern, data.config);
+      renderBreakpointList();
       console.log('Breakpoint set:', data.pattern);
       break;
     case 'breakpointRemoved':
+      breakpoints.delete(data.pattern);
+      renderBreakpointList();
       console.log('Breakpoint removed:', data.pattern);
+      break;
+    case 'breakpointToggled':
+      if (data.config) {
+        breakpoints.set(data.pattern, data.config);
+        renderBreakpointList();
+      }
+      console.log('Breakpoint toggled:', data.pattern, data.enabled);
+      break;
+    case 'breakpointUpdated':
+      if (data.oldPattern !== data.newPattern) {
+        breakpoints.delete(data.oldPattern);
+      }
+      breakpoints.set(data.newPattern, data.config);
+      renderBreakpointList();
+      console.log('Breakpoint updated:', data.oldPattern, '->', data.newPattern);
+      break;
+    case 'breakpointsList':
+      breakpoints.clear();
+      for (const bp of data.breakpoints) {
+        breakpoints.set(bp.pattern, bp);
+      }
+      renderBreakpointList();
+      console.log('Loaded', data.breakpoints.length, 'breakpoints');
+      break;
+    case 'error':
+      console.error('WebSocket error:', data.message);
+      alert('Error: ' + data.message);
       break;
     case 'mappingSet':
       console.log('Mapping set:', data.pattern);
@@ -266,7 +298,11 @@ function downloadCert() {
 
 // Modal functions
 function openBreakpointsModal() {
-  document.getElementById('breakpointsModal').classList.add('show');
+  const modal = document.getElementById('breakpointsModal');
+  if (!modal.classList.contains('show')) {
+    resetBreakpointModal();
+  }
+  modal.classList.add('show');
   renderBreakpointList();
 }
 
@@ -277,24 +313,61 @@ function openMappingsModal() {
 
 function closeModal(modalId) {
   document.getElementById(modalId).classList.remove('show');
+  if (modalId === 'breakpointsModal') {
+    resetBreakpointModal();
+  }
+}
+
+function resetBreakpointModal() {
+  editingPattern = null;
+  document.getElementById('breakpointsModalTitle').textContent = 'Breakpoints';
+  document.getElementById('breakpointSubmitBtn').textContent = 'Add Breakpoint';
+  document.getElementById('breakpointName').value = '';
+  document.getElementById('breakpointPattern').value = '';
 }
 
 function addBreakpoint() {
   const pattern = document.getElementById('breakpointPattern').value.trim();
-  if (!pattern) return;
-  
-  breakpoints.set(pattern, {});
-  ws.send(JSON.stringify({
-    type: 'setBreakpoint',
-    pattern,
-    config: {}
-  }));
-  
-  document.getElementById('breakpointPattern').value = '';
-  renderBreakpointList();
+  const name = document.getElementById('breakpointName').value.trim();
+
+  if (!pattern) {
+    alert('URL Pattern is required');
+    return;
+  }
+
+  if (editingPattern !== null) {
+    // Edit mode
+    const existingBreakpoint = breakpoints.get(editingPattern);
+    ws.send(JSON.stringify({
+      type: 'updateBreakpoint',
+      oldPattern: editingPattern,
+      newConfig: {
+        pattern,
+        name: name || undefined,
+        enabled: existingBreakpoint?.enabled !== false
+      }
+    }));
+  } else {
+    // Add mode
+    ws.send(JSON.stringify({
+      type: 'setBreakpoint',
+      pattern,
+      config: {
+        name: name || undefined,
+        enabled: true
+      }
+    }));
+  }
+
+  // Reset modal to add mode
+  resetBreakpointModal();
 }
 
 function removeBreakpoint(pattern) {
+  if (!confirm('Are you sure you want to remove this breakpoint?')) {
+    return;
+  }
+
   breakpoints.delete(pattern);
   ws.send(JSON.stringify({
     type: 'removeBreakpoint',
@@ -303,19 +376,66 @@ function removeBreakpoint(pattern) {
   renderBreakpointList();
 }
 
+function editBreakpoint(pattern) {
+  const breakpoint = breakpoints.get(pattern);
+  if (!breakpoint) return;
+
+  editingPattern = pattern;
+  document.getElementById('breakpointName').value = breakpoint.name || '';
+  document.getElementById('breakpointPattern').value = breakpoint.pattern;
+  document.getElementById('breakpointsModalTitle').textContent = 'Edit Breakpoint';
+  document.getElementById('breakpointSubmitBtn').textContent = 'Update Breakpoint';
+
+  // Make sure modal is open
+  document.getElementById('breakpointsModal').classList.add('show');
+}
+
+function toggleBreakpoint(pattern) {
+  const breakpoint = breakpoints.get(pattern);
+  if (!breakpoint) return;
+
+  const newEnabled = !breakpoint.enabled;
+
+  ws.send(JSON.stringify({
+    type: 'toggleBreakpoint',
+    pattern,
+    enabled: newEnabled
+  }));
+}
+
 function renderBreakpointList() {
   const list = document.getElementById('breakpointList');
   if (breakpoints.size === 0) {
     list.innerHTML = '<p style="color: var(--text-dim); margin-top: 1rem;">No breakpoints set</p>';
     return;
   }
-  
-  list.innerHTML = Array.from(breakpoints.keys()).map(pattern => `
-    <li class="breakpoint-item">
-      <span class="breakpoint-pattern">${escapeHtml(pattern)}</span>
-      <button class="breakpoint-remove" onclick="removeBreakpoint('${escapeHtml(pattern)}')">Remove</button>
-    </li>
-  `).join('');
+
+  list.innerHTML = Array.from(breakpoints.entries()).map(([pattern, config]) => {
+    const isEnabled = config.enabled !== false;
+    const displayName = config.name || config.pattern;
+    const hasName = !!config.name;
+
+    return `
+      <li class="breakpoint-item ${!isEnabled ? 'breakpoint-disabled' : ''}">
+        <div class="breakpoint-info">
+          <div class="breakpoint-header">
+            <span class="breakpoint-pattern">${escapeHtml(displayName)}</span>
+            <span class="breakpoint-status-badge ${isEnabled ? 'active' : 'disabled'}">
+              ${isEnabled ? 'ACTIVE' : 'DISABLED'}
+            </span>
+          </div>
+          ${hasName ? `<div class="breakpoint-subtext">${escapeHtml(config.pattern)}</div>` : ''}
+        </div>
+        <div class="breakpoint-actions">
+          <button class="breakpoint-edit" onclick="editBreakpoint('${escapeHtml(pattern)}')">Edit</button>
+          <button class="breakpoint-toggle" onclick="toggleBreakpoint('${escapeHtml(pattern)}')">
+            ${isEnabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="breakpoint-remove" onclick="removeBreakpoint('${escapeHtml(pattern)}')">Remove</button>
+        </div>
+      </li>
+    `;
+  }).join('');
 }
 
 function addMapping() {
