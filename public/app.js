@@ -91,7 +91,7 @@ function updateStatusIndicator(connected) {
   const dot = document.querySelector('.status-dot');
   if (connected) {
     indicator.textContent = 'PROXY ACTIVE';
-    dot.style.background = 'var(--accent-primary)';
+    dot.style.background = 'var(--status-2xx)';
   } else {
     indicator.textContent = 'DISCONNECTED';
     dot.style.background = 'var(--accent-error)';
