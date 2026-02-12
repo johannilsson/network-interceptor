@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lift - Setup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Archivo:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #1c1c1e;
+      --bg-secondary: #252528;
+      --bg-tertiary: #2e2e32;
+      --bg-hover: #38383c;
+      --border: #48484a;
+      --text-primary: #f0f0f0;
+      --text-secondary: #98989d;
+      --text-dim: #636366;
+      --accent-primary: #4a90d9;
+      --accent-secondary: #6cb4ee;
+      --accent-tertiary: #9b8ec4;
+      --accent-error: #d65b5b;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 2rem 1rem;
+    }
+
+    .setup-container {
+      max-width: 480px;
+      width: 100%;
+    }
+
+    .logo {
+      font-family: 'Archivo', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+      background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      text-align: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .setup-title {
+      font-family: 'Archivo', sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-align: center;
+      margin-bottom: 2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .setup-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      position: relative;
+    }
+
+    .step-badge {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 0.2rem 0.6rem;
+      border-radius: 3px;
+      background: var(--accent-primary);
+      color: var(--bg-primary);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.75rem;
+    }
+
+    .setup-card h2 {
+      font-family: 'Archivo', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+    }
+
+    .setup-card p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+      line-height: 1.5;
+    }
+
+    .btn-primary {
+      display: block;
+      width: 100%;
+      padding: 0.85rem 1.5rem;
+      background: var(--accent-primary);
+      color: var(--bg-primary);
+      border: 1px solid var(--accent-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      border-radius: 4px;
+    }
+
+    .btn-primary:hover {
+      background: transparent;
+      color: var(--accent-primary);
+    }
+
+    .config-item {
+      display: flex;
+      align-items: center;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .config-item label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      width: 60px;
+      flex-shrink: 0;
+    }
+
+    .config-item code {
+      flex: 1;
+      font-size: 0.9rem;
+      color: var(--accent-secondary);
+      font-weight: 600;
+    }
+
+    .btn-copy {
+      padding: 0.35rem 0.75rem;
+      background: var(--bg-hover);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      border-radius: 3px;
+      white-space: nowrap;
+    }
+
+    .btn-copy:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .btn-copy.copied {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .btn-copy-both {
+      display: block;
+      width: 100%;
+      padding: 0.65rem 1rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      border-radius: 4px;
+    }
+
+    .btn-copy-both:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .btn-copy-both.copied {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="setup-container">
+    <div class="logo">Lift</div>
+    <div class="setup-title">Proxy Setup</div>
+
+    <section class="setup-card">
+      <div class="step-badge">Step 1</div>
+      <h2>Certificate</h2>
+      <p>Download and install as a trusted root certificate to capture HTTPS traffic.</p>
+      <a href="/api/ca-cert" class="btn-primary">Download Certificate</a>
+    </section>
+
+    <section class="setup-card">
+      <div class="step-badge">Step 2</div>
+      <h2>Proxy Configuration</h2>
+      <p>Settings &rarr; Wi-Fi &rarr; Configure Proxy &rarr; Manual</p>
+      <div class="config-item">
+        <label>Server</label>
+        <code id="server-value">{{SERVER_IP}}</code>
+        <button class="btn-copy" onclick="copy('server-value', this)">Copy</button>
+      </div>
+      <div class="config-item">
+        <label>Port</label>
+        <code id="port-value">{{PROXY_PORT}}</code>
+        <button class="btn-copy" onclick="copy('port-value', this)">Copy</button>
+      </div>
+      <button class="btn-copy-both" onclick="copyBoth(this)">Copy Both</button>
+    </section>
+  </div>
+
+  <script>
+    function copyText(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+      }
+      var textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+
+    function showCopied(button) {
+      var original = button.textContent;
+      button.textContent = 'Copied!';
+      button.classList.add('copied');
+      setTimeout(function() {
+        button.textContent = original;
+        button.classList.remove('copied');
+      }, 2000);
+    }
+
+    function copy(elementId, button) {
+      var text = document.getElementById(elementId).textContent;
+      copyText(text);
+      showCopied(button);
+    }
+
+    function copyBoth(button) {
+      var server = document.getElementById('server-value').textContent;
+      var port = document.getElementById('port-value').textContent;
+      copyText(server + ':' + port);
+      showCopied(button);
+    }
+  </script>
+</body>
+</html>

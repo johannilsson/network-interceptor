@@ -1,7 +1,22 @@
 const express = require('express');
 const WebSocket = require('ws');
 const path = require('path');
+const fs = require('fs');
+const os = require('os');
+const qrcode = require('qrcode-terminal');
 const ProxyServer = require('./proxy-server');
+
+function getLocalIPAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'localhost';
+}
 
 const app = express();
 const PORT = 3000;
@@ -112,19 +127,45 @@ app.get('/api/ca-cert', (req, res) => {
   res.download(path.join(__dirname, 'ca-cert.pem'), 'network-interceptor-ca.pem');
 });
 
+app.get('/setup', (req, res) => {
+  const localIP = getLocalIPAddress();
+  const html = fs.readFileSync(path.join(__dirname, 'public', 'setup.html'), 'utf8');
+  const injected = html
+    .replace(/\{\{SERVER_IP\}\}/g, localIP)
+    .replace(/\{\{PROXY_PORT\}\}/g, String(PROXY_PORT));
+  res.send(injected);
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-console.log('\n╔══════════════════════════════════════════════════════════╗');
-console.log('║          Network Traffic Interceptor v1.0               ║');
-console.log('╠══════════════════════════════════════════════════════════╣');
-console.log(`║  Web UI:    http://localhost:${PORT}                        ║`);
-console.log(`║  Proxy:     localhost:${PROXY_PORT}                             ║`);
-console.log('║                                                          ║');
-console.log('║  Setup Instructions:                                     ║');
-console.log('║  1. Download CA certificate from web UI                 ║');
-console.log('║  2. Install it as trusted root certificate              ║');
-console.log('║  3. Configure your system/browser to use proxy          ║');
-console.log(`║     Proxy: localhost:${PROXY_PORT}                             ║`);
-console.log('╚══════════════════════════════════════════════════════════╝\n');
+const localIP = getLocalIPAddress();
+const setupURL = `http://${localIP}:${PORT}/setup`;
+
+const BOX_WIDTH = 58; // inner width between ║ characters
+
+function padLine(text) {
+  const pad = BOX_WIDTH - text.length;
+  return '║' + text + ' '.repeat(Math.max(0, pad)) + '║';
+}
+
+console.log('\n╔' + '═'.repeat(BOX_WIDTH) + '╗');
+console.log(padLine('          Network Traffic Interceptor v1.0'));
+console.log('╠' + '═'.repeat(BOX_WIDTH) + '╣');
+console.log(padLine(''));
+console.log(padLine('  Scan to set up on your device:'));
+console.log(padLine(''));
+
+qrcode.generate(setupURL, { small: true }, (qr) => {
+  const lines = qr.split('\n').filter(l => l.length > 0);
+  for (const line of lines) {
+    console.log(padLine('  ' + line));
+  }
+  console.log(padLine(''));
+  console.log(padLine(`  Setup:  ${setupURL}`));
+  console.log(padLine(`  Web UI: http://${localIP}:${PORT}`));
+  console.log(padLine(`  Proxy:  ${localIP}:${PROXY_PORT}`));
+  console.log(padLine(''));
+  console.log('╚' + '═'.repeat(BOX_WIDTH) + '╝\n');
+});
