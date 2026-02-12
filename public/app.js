@@ -248,6 +248,7 @@ function renderDetailPanel() {
         <div class="code-block">${escapeHtml(bodyText)}</div>
       </div>
     `;
+    highlightCodeBlocks(content, request.bodyMeta?.contentType || request.headers['content-type']);
   } else if (currentTab === 'response') {
     if (!response) {
       content.innerHTML = `
@@ -280,6 +281,7 @@ function renderDetailPanel() {
         <div class="code-block">${escapeHtml(bodyText)}</div>
       </div>
     `;
+    highlightCodeBlocks(content, response.bodyMeta?.contentType || response.headers['content-type']);
   }
 }
 
@@ -287,6 +289,36 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function detectLanguage(contentType) {
+  if (!contentType) return null;
+  const ct = contentType.toLowerCase();
+  if (ct.includes('json')) return 'json';
+  if (ct.includes('html')) return 'xml';
+  if (ct.includes('xml')) return 'xml';
+  if (ct.includes('javascript')) return 'javascript';
+  if (ct.includes('css')) return 'css';
+  return null;
+}
+
+function highlightCodeBlocks(container, contentType) {
+  const block = container.querySelector('.code-block');
+  if (!block || !window.hljs) return;
+  const text = block.textContent;
+  if (text === 'No body') return;
+
+  const lang = detectLanguage(contentType);
+  const codeEl = document.createElement('code');
+  codeEl.textContent = text;
+  if (lang) codeEl.className = 'language-' + lang;
+
+  const preEl = document.createElement('pre');
+  preEl.appendChild(codeEl);
+  block.textContent = '';
+  block.appendChild(preEl);
+
+  hljs.highlightElement(codeEl);
 }
 
 function filterTraffic() {
