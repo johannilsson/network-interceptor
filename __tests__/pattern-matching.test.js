@@ -1,10 +1,18 @@
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const ProxyServer = require('../proxy-server');
+
+const tmpBreakpointsFile = path.join(os.tmpdir(), `breakpoints-test-pattern-${process.pid}.json`);
+
+afterAll(() => { try { fs.unlinkSync(tmpBreakpointsFile); } catch {} });
 
 describe('Pattern Matching', () => {
   let proxyServer;
 
   beforeEach(() => {
-    proxyServer = new ProxyServer();
+    try { fs.unlinkSync(tmpBreakpointsFile); } catch {}
+    proxyServer = new ProxyServer(8888, { breakpointsFilePath: tmpBreakpointsFile });
   });
 
   describe('Leading wildcard patterns', () => {

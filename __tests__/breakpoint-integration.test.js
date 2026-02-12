@@ -1,5 +1,8 @@
 const http = require('http');
 const https = require('https');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const ProxyServer = require('../proxy-server');
 
 // Mock WebSocket for testing
@@ -30,8 +33,11 @@ describe('Breakpoint Integration Tests', () => {
   let mockTargetServer;
   let mockHttpsServer;
   const targetPort = 9999;
+  let tmpBreakpointsFile;
 
   beforeAll((done) => {
+    tmpBreakpointsFile = path.join(os.tmpdir(), `breakpoints-test-integration-${process.pid}.json`);
+
     // Create a mock target server for testing
     mockTargetServer = http.createServer((req, res) => {
       if (req.url === '/users') {
@@ -50,11 +56,14 @@ describe('Breakpoint Integration Tests', () => {
   });
 
   afterAll((done) => {
+    try { fs.unlinkSync(tmpBreakpointsFile); } catch {}
     mockTargetServer.close(done);
   });
 
   beforeEach(() => {
-    proxyServer = new ProxyServer();
+    // Remove temp file so each test starts clean
+    try { fs.unlinkSync(tmpBreakpointsFile); } catch {}
+    proxyServer = new ProxyServer(8888, { breakpointsFilePath: tmpBreakpointsFile });
   });
 
   describe('Breakpoint pattern matching', () => {

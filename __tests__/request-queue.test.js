@@ -1,14 +1,22 @@
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const ProxyServer = require('../proxy-server');
+
+const tmpBreakpointsFile = path.join(os.tmpdir(), `breakpoints-test-queue-${process.pid}.json`);
 
 // Mock setTimeout and clearTimeout
 jest.useFakeTimers();
+
+afterAll(() => { try { fs.unlinkSync(tmpBreakpointsFile); } catch {} });
 
 describe('Request Queue Management', () => {
   let proxyServer;
   let mockClientRes;
 
   beforeEach(() => {
-    proxyServer = new ProxyServer();
+    try { fs.unlinkSync(tmpBreakpointsFile); } catch {}
+    proxyServer = new ProxyServer(8888, { breakpointsFilePath: tmpBreakpointsFile });
     mockClientRes = {
       writeHead: jest.fn(),
       end: jest.fn(),

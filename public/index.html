@@ -321,6 +321,90 @@
       background: var(--text-dim);
     }
 
+    /* Detail Summary */
+    .detail-summary {
+      display: none;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .detail-summary.visible {
+      display: flex;
+    }
+
+    .detail-summary-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+    }
+
+    .detail-summary-request {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    .detail-summary-path {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .detail-summary-url {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 4px 20px 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      user-select: all;
+    }
+
+    .detail-summary-tags {
+      display: flex;
+      gap: 8px;
+      padding: 6px 20px 0;
+    }
+
+    .detail-summary-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .detail-summary-metrics {
+      padding: 12px 20px;
+      display: flex;
+      gap: 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .detail-metric-label {
+      font-size: 10px;
+      font-family: 'DM Sans', sans-serif;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 3px;
+      font-weight: 500;
+    }
+
+    .detail-metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
     /* Detail Panel */
     .detail-panel {
       flex: 1;
@@ -786,8 +870,36 @@
 
       <!-- Detail Panel -->
       <main class="detail-panel">
+        <div class="detail-summary" id="detailSummary">
+          <div class="detail-summary-header">
+            <div class="detail-summary-request">
+              <span class="traffic-method" id="summaryMethod"></span>
+              <span class="detail-summary-path" id="summaryPath"></span>
+            </div>
+          </div>
+          <div class="detail-summary-url" id="summaryUrl"></div>
+          <div class="detail-summary-tags" id="summaryTags"></div>
+          <div class="detail-summary-metrics" id="summaryMetrics">
+            <div class="detail-metric">
+              <div class="detail-metric-label">Status</div>
+              <div class="detail-metric-value" id="summaryStatus">—</div>
+            </div>
+            <div class="detail-metric">
+              <div class="detail-metric-label">Latency</div>
+              <div class="detail-metric-value" id="summaryLatency">—</div>
+            </div>
+            <div class="detail-metric">
+              <div class="detail-metric-label">Size</div>
+              <div class="detail-metric-value" id="summarySize">—</div>
+            </div>
+            <div class="detail-metric">
+              <div class="detail-metric-label">Content</div>
+              <div class="detail-metric-value" id="summaryContent">—</div>
+            </div>
+          </div>
+        </div>
         <div class="detail-tabs">
-          <button class="detail-tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+          <button class="detail-tab active" data-tab="headers" onclick="switchTab('headers')">Headers</button>
           <button class="detail-tab" data-tab="request" onclick="switchTab('request')">Request</button>
           <button class="detail-tab" data-tab="response" onclick="switchTab('response')">Response</button>
         </div>

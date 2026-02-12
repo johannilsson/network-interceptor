@@ -99,7 +99,7 @@ function generateCertificate(hostname, caCert, caKey) {
 }
 
 class ProxyServer {
-  constructor(port = 8888) {
+  constructor(port = 8888, options = {}) {
     this.port = port;
     this.webSocketClients = new Set();
     this.breakpoints = new Map(); // URL pattern -> breakpoint config
@@ -107,7 +107,7 @@ class ProxyServer {
     this.requestQueue = new Map(); // Request ID -> request data
     this.requestIdCounter = 0;
     this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
-    this.breakpointsFilePath = path.join(__dirname, 'breakpoints.json');
+    this.breakpointsFilePath = options.breakpointsFilePath || path.join(__dirname, 'breakpoints.json');
 
     const ca = generateCACertificate();
     this.caCert = ca.cert;

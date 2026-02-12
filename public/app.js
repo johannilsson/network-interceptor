@@ -1,7 +1,7 @@
 let ws;
 let trafficData = [];
 let selectedRequest = null;
-let currentTab = 'overview';
+let currentTab = 'headers';
 let breakpointRequest = null;
 let breakpoints = new Map();
 let mappings = new Map();
@@ -181,9 +181,77 @@ function switchTab(tab) {
   renderDetailPanel();
 }
 
+function updateDetailSummary() {
+  const summary = document.getElementById('detailSummary');
+  if (!selectedRequest) {
+    summary.classList.remove('visible');
+    return;
+  }
+
+  const { request, response } = selectedRequest;
+  summary.classList.add('visible');
+
+  const methodEl = document.getElementById('summaryMethod');
+  methodEl.textContent = request.method;
+  methodEl.className = `traffic-method method-${request.method}`;
+
+  const url = new URL(request.url);
+  document.getElementById('summaryPath').textContent = url.pathname + url.search;
+  document.getElementById('summaryUrl').textContent = request.url;
+
+  // Tags (protocol, mapped/custom source)
+  const tags = [];
+  tags.push(`<span class="detail-summary-tag" style="background: rgba(138,135,128,0.12); color: var(--text-secondary);">${request.protocol.toUpperCase()}</span>`);
+  if (response?.mapped) {
+    tags.push(`<span class="detail-summary-tag" style="background: rgba(212,170,70,0.12); color: var(--accent-warning);">Mapped</span>`);
+  }
+  if (response?.custom) {
+    tags.push(`<span class="detail-summary-tag" style="background: rgba(160,139,212,0.12); color: var(--accent-tertiary);">Custom</span>`);
+  }
+  document.getElementById('summaryTags').innerHTML = tags.join('');
+
+  const statusEl = document.getElementById('summaryStatus');
+  if (response) {
+    statusEl.textContent = String(response.status);
+    statusEl.style.color = response.status < 400 ? 'var(--status-2xx)' : response.status < 500 ? 'var(--status-4xx)' : 'var(--status-5xx)';
+  } else {
+    statusEl.textContent = '—';
+    statusEl.style.color = '';
+  }
+
+  // Latency
+  const latencyEl = document.getElementById('summaryLatency');
+  if (response && response.timestamp && request.timestamp) {
+    const ms = new Date(response.timestamp) - new Date(request.timestamp);
+    latencyEl.textContent = ms + 'ms';
+  } else {
+    latencyEl.textContent = '—';
+  }
+
+  // Size
+  const sizeEl = document.getElementById('summarySize');
+  const contentLenHeader = response?.headers?.['content-length'];
+  if (contentLenHeader) {
+    const bytes = parseInt(contentLenHeader);
+    sizeEl.textContent = bytes >= 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
+  } else if (response?.body) {
+    const bytes = new Blob([response.body]).size;
+    sizeEl.textContent = bytes >= 1024 ? (bytes / 1024).toFixed(1) + ' KB' : bytes + ' B';
+  } else {
+    sizeEl.textContent = '—';
+  }
+
+  // Content type
+  const contentEl = document.getElementById('summaryContent');
+  const ct = response?.headers?.['content-type'] || '';
+  const shortType = ct.split(';')[0].split('/').pop() || '—';
+  contentEl.textContent = shortType;
+}
+
 function renderDetailPanel() {
   const content = document.getElementById('detailContent');
-  
+  updateDetailSummary();
+
   if (!selectedRequest) {
     content.innerHTML = `
       <div class="empty-state">
@@ -193,55 +261,40 @@ function renderDetailPanel() {
     `;
     return;
   }
-  
+
   const { request, response } = selectedRequest;
-  
-  if (currentTab === 'overview') {
+
+  if (currentTab === 'headers') {
+    const reqHeadersHtml = Object.entries(request.headers)
+      .map(([key, value]) => `<div class="detail-label">${escapeHtml(key)}</div><div class="detail-value">${escapeHtml(String(value))}</div>`)
+      .join('');
+
+    let resHeadersHtml = '';
+    if (response) {
+      resHeadersHtml = Object.entries(response.headers)
+        .map(([key, value]) => `<div class="detail-label">${escapeHtml(key)}</div><div class="detail-value">${escapeHtml(String(value))}</div>`)
+        .join('');
+    }
+
     content.innerHTML = `
       <div class="detail-section">
-        <h3>Request</h3>
-        <div class="detail-grid">
-          <div class="detail-label">Method:</div>
-          <div class="detail-value">${request.method}</div>
-          <div class="detail-label">URL:</div>
-          <div class="detail-value">${request.url}</div>
-          <div class="detail-label">Protocol:</div>
-          <div class="detail-value">${request.protocol.toUpperCase()}</div>
-          <div class="detail-label">Time:</div>
-          <div class="detail-value">${new Date(request.timestamp).toLocaleString()}</div>
-        </div>
+        <h3>Request Headers</h3>
+        <div class="detail-grid">${reqHeadersHtml}</div>
       </div>
-      
       ${response ? `
         <div class="detail-section">
-          <h3>Response</h3>
-          <div class="detail-grid">
-            <div class="detail-label">Status:</div>
-            <div class="detail-value ${getStatusClass(response.status)}">${response.status} ${response.statusText}</div>
-            <div class="detail-label">Time:</div>
-            <div class="detail-value">${new Date(response.timestamp).toLocaleString()}</div>
-            ${response.mapped ? '<div class="detail-label">Source:</div><div class="detail-value" style="color: var(--accent-warning)">Mapped Response</div>' : ''}
-            ${response.custom ? '<div class="detail-label">Source:</div><div class="detail-value" style="color: var(--accent-tertiary)">Custom Response</div>' : ''}
-          </div>
+          <h3>Response Headers</h3>
+          <div class="detail-grid">${resHeadersHtml}</div>
         </div>
-      ` : '<div class="detail-section"><h3>Response</h3><p style="color: var(--text-dim);">Pending...</p></div>'}
+      ` : ''}
     `;
   } else if (currentTab === 'request') {
-    const headersHtml = Object.entries(request.headers)
-      .map(([key, value]) => `<div class="detail-label">${key}:</div><div class="detail-value">${value}</div>`)
-      .join('');
-    
     const bodyText = request.body || 'No body';
     const reqDecompressedLabel = request.bodyMeta?.wasDecompressed
-      ? `<div style="color: var(--accent-warning); font-size: 0.75rem; margin-bottom: 0.5rem;">Decoded from ${escapeHtml(request.bodyMeta.originalEncoding)}</div>`
+      ? `<div style="color: var(--accent-warning); font-size: 11px; margin-bottom: 6px;">Decoded from ${escapeHtml(request.bodyMeta.originalEncoding)}</div>`
       : '';
 
     content.innerHTML = `
-      <div class="detail-section">
-        <h3>Headers</h3>
-        <div class="detail-grid">${headersHtml}</div>
-      </div>
-
       <div class="detail-section">
         <h3>Body</h3>
         ${reqDecompressedLabel}
@@ -259,22 +312,13 @@ function renderDetailPanel() {
       `;
       return;
     }
-    
-    const headersHtml = Object.entries(response.headers)
-      .map(([key, value]) => `<div class="detail-label">${key}:</div><div class="detail-value">${value}</div>`)
-      .join('');
-    
+
     const bodyText = response.body || 'No body';
     const resDecompressedLabel = response.bodyMeta?.wasDecompressed
-      ? `<div style="color: var(--accent-warning); font-size: 0.75rem; margin-bottom: 0.5rem;">Decoded from ${escapeHtml(response.bodyMeta.originalEncoding)}</div>`
+      ? `<div style="color: var(--accent-warning); font-size: 11px; margin-bottom: 6px;">Decoded from ${escapeHtml(response.bodyMeta.originalEncoding)}</div>`
       : '';
 
     content.innerHTML = `
-      <div class="detail-section">
-        <h3>Headers</h3>
-        <div class="detail-grid">${headersHtml}</div>
-      </div>
-
       <div class="detail-section">
         <h3>Body</h3>
         ${resDecompressedLabel}

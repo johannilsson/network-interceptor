@@ -1,11 +1,19 @@
 const zlib = require('zlib');
+const path = require('path');
+const fs = require('fs');
+const os = require('os');
 const ProxyServer = require('../proxy-server');
+
+const tmpBreakpointsFile = path.join(os.tmpdir(), `breakpoints-test-body-${process.pid}.json`);
+
+afterAll(() => { try { fs.unlinkSync(tmpBreakpointsFile); } catch {} });
 
 describe('Body Formatting', () => {
   let proxy;
 
   beforeEach(() => {
-    proxy = new ProxyServer(8888);
+    try { fs.unlinkSync(tmpBreakpointsFile); } catch {}
+    proxy = new ProxyServer(8888, { breakpointsFilePath: tmpBreakpointsFile });
   });
 
   describe('isJsonContentType()', () => {
