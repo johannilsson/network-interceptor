@@ -339,6 +339,20 @@
     .status-4xx { color: var(--status-4xx); }
     .status-5xx { color: var(--status-5xx); }
 
+    /* Resize Handle */
+    .resize-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: transparent;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+
+    .resize-handle:hover,
+    .resize-handle.dragging {
+      background: var(--accent-primary);
+    }
+
     /* Detail Panel */
     .detail-panel {
       flex: 1;
@@ -794,6 +808,9 @@
         </div>
       </aside>
 
+      <!-- Resize Handle -->
+      <div class="resize-handle" id="resizeHandle"></div>
+
       <!-- Detail Panel -->
       <main class="detail-panel">
         <div class="detail-tabs">
@@ -882,6 +899,39 @@
     </div>
   </div>
 
+  <script>
+    (function() {
+      const sidebar = document.querySelector('.sidebar');
+      const handle = document.getElementById('resizeHandle');
+      const saved = localStorage.getItem('sidebarWidth');
+      if (saved) sidebar.style.width = saved + 'px';
+
+      let dragging = false;
+
+      handle.addEventListener('mousedown', function(e) {
+        dragging = true;
+        handle.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', function(e) {
+        if (!dragging) return;
+        const width = Math.min(Math.max(e.clientX, 180), window.innerWidth - 200);
+        sidebar.style.width = width + 'px';
+      });
+
+      document.addEventListener('mouseup', function() {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem('sidebarWidth', parseInt(sidebar.style.width));
+      });
+    })();
+  </script>
   <script src="app.js"></script>
 </body>
 </html>
