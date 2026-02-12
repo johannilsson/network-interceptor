@@ -232,15 +232,19 @@ function renderDetailPanel() {
       .join('');
     
     const bodyText = request.body || 'No body';
-    
+    const reqDecompressedLabel = request.bodyMeta?.wasDecompressed
+      ? `<div style="color: var(--accent-warning); font-size: 0.75rem; margin-bottom: 0.5rem;">Decoded from ${escapeHtml(request.bodyMeta.originalEncoding)}</div>`
+      : '';
+
     content.innerHTML = `
       <div class="detail-section">
         <h3>Headers</h3>
         <div class="detail-grid">${headersHtml}</div>
       </div>
-      
+
       <div class="detail-section">
         <h3>Body</h3>
+        ${reqDecompressedLabel}
         <div class="code-block">${escapeHtml(bodyText)}</div>
       </div>
     `;
@@ -260,15 +264,19 @@ function renderDetailPanel() {
       .join('');
     
     const bodyText = response.body || 'No body';
-    
+    const resDecompressedLabel = response.bodyMeta?.wasDecompressed
+      ? `<div style="color: var(--accent-warning); font-size: 0.75rem; margin-bottom: 0.5rem;">Decoded from ${escapeHtml(response.bodyMeta.originalEncoding)}</div>`
+      : '';
+
     content.innerHTML = `
       <div class="detail-section">
         <h3>Headers</h3>
         <div class="detail-grid">${headersHtml}</div>
       </div>
-      
+
       <div class="detail-section">
         <h3>Body</h3>
+        ${resDecompressedLabel}
         <div class="code-block">${escapeHtml(bodyText)}</div>
       </div>
     `;

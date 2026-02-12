@@ -4,6 +4,7 @@ const net = require('net');
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');
 const forge = require('node-forge');
 
 // Certificate cache
@@ -142,19 +143,29 @@ class ProxyServer {
 
     // Process request body if exists
     if (broadcastData.request?.body) {
+      const reqEncoding = broadcastData.request.headers?.['content-encoding'];
+      const reqDecompressed = this.decompressBody(broadcastData.request.body, reqEncoding);
       const processed = this.processBodyForBroadcast(
-        broadcastData.request.body,
+        reqDecompressed.body,
         broadcastData.request.headers
       );
+      if (reqDecompressed.wasDecompressed) {
+        processed.bodyMeta = { ...processed.bodyMeta, wasDecompressed: true, originalEncoding: reqDecompressed.originalEncoding };
+      }
       broadcastData.request = { ...broadcastData.request, ...processed };
     }
 
     // Process response body if exists
     if (broadcastData.response?.body) {
+      const resEncoding = broadcastData.response.headers?.['content-encoding'];
+      const resDecompressed = this.decompressBody(broadcastData.response.body, resEncoding);
       const processed = this.processBodyForBroadcast(
-        broadcastData.response.body,
+        resDecompressed.body,
         broadcastData.response.headers
       );
+      if (resDecompressed.wasDecompressed) {
+        processed.bodyMeta = { ...processed.bodyMeta, wasDecompressed: true, originalEncoding: resDecompressed.originalEncoding };
+      }
       broadcastData.response = { ...broadcastData.response, ...processed };
     }
 
@@ -376,6 +387,31 @@ class ProxyServer {
       });
       stream.on('error', () => resolve(null));
     });
+  }
+
+  decompressBody(buffer, contentEncoding) {
+    if (!buffer || !contentEncoding) {
+      return { body: buffer, wasDecompressed: false };
+    }
+
+    const encoding = contentEncoding.trim().toLowerCase();
+
+    try {
+      let decompressed;
+      if (encoding === 'gzip' || encoding === 'x-gzip') {
+        decompressed = zlib.gunzipSync(buffer);
+      } else if (encoding === 'deflate') {
+        decompressed = zlib.inflateSync(buffer);
+      } else if (encoding === 'br') {
+        decompressed = zlib.brotliDecompressSync(buffer);
+      } else {
+        return { body: buffer, wasDecompressed: false };
+      }
+
+      return { body: decompressed, wasDecompressed: true, originalEncoding: encoding };
+    } catch (error) {
+      return { body: buffer, wasDecompressed: false, decompressError: error.message };
+    }
   }
 
   isJsonContentType(headers) {

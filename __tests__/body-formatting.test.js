@@ -1,3 +1,4 @@
+const zlib = require('zlib');
 const ProxyServer = require('../proxy-server');
 
 describe('Body Formatting', () => {
@@ -398,6 +399,125 @@ describe('Body Formatting', () => {
       expect(sentData.request.bodyMeta.contentType).toBe('text');
       expect(sentData.response.body).toBe('{\n  "json": "response"\n}');
       expect(sentData.response.bodyMeta.contentType).toBe('json');
+    });
+  });
+
+  describe('decompressBody()', () => {
+    test('decompresses gzip content', () => {
+      const original = Buffer.from('hello world');
+      const compressed = zlib.gzipSync(original);
+      const result = proxy.decompressBody(compressed, 'gzip');
+
+      expect(result.body.toString()).toBe('hello world');
+      expect(result.wasDecompressed).toBe(true);
+      expect(result.originalEncoding).toBe('gzip');
+    });
+
+    test('decompresses deflate content', () => {
+      const original = Buffer.from('hello world');
+      const compressed = zlib.deflateSync(original);
+      const result = proxy.decompressBody(compressed, 'deflate');
+
+      expect(result.body.toString()).toBe('hello world');
+      expect(result.wasDecompressed).toBe(true);
+      expect(result.originalEncoding).toBe('deflate');
+    });
+
+    test('decompresses brotli content', () => {
+      const original = Buffer.from('hello world');
+      const compressed = zlib.brotliCompressSync(original);
+      const result = proxy.decompressBody(compressed, 'br');
+
+      expect(result.body.toString()).toBe('hello world');
+      expect(result.wasDecompressed).toBe(true);
+      expect(result.originalEncoding).toBe('br');
+    });
+
+    test('handles x-gzip alias', () => {
+      const original = Buffer.from('hello world');
+      const compressed = zlib.gzipSync(original);
+      const result = proxy.decompressBody(compressed, 'x-gzip');
+
+      expect(result.body.toString()).toBe('hello world');
+      expect(result.wasDecompressed).toBe(true);
+      expect(result.originalEncoding).toBe('x-gzip');
+    });
+
+    test('passes through unknown encoding', () => {
+      const buffer = Buffer.from('some data');
+      const result = proxy.decompressBody(buffer, 'unknown');
+
+      expect(result.body).toBe(buffer);
+      expect(result.wasDecompressed).toBe(false);
+    });
+
+    test('handles null body', () => {
+      const result = proxy.decompressBody(null, 'gzip');
+
+      expect(result.body).toBeNull();
+      expect(result.wasDecompressed).toBe(false);
+    });
+
+    test('handles null encoding', () => {
+      const buffer = Buffer.from('some data');
+      const result = proxy.decompressBody(buffer, null);
+
+      expect(result.body).toBe(buffer);
+      expect(result.wasDecompressed).toBe(false);
+    });
+
+    test('returns original buffer on corrupt data', () => {
+      const corrupt = Buffer.from('not valid gzip data');
+      const result = proxy.decompressBody(corrupt, 'gzip');
+
+      expect(result.body).toBe(corrupt);
+      expect(result.wasDecompressed).toBe(false);
+      expect(result.decompressError).toBeDefined();
+    });
+
+    test('handles case-insensitive encoding', () => {
+      const original = Buffer.from('hello world');
+      const compressed = zlib.gzipSync(original);
+      const result = proxy.decompressBody(compressed, 'GZIP');
+
+      expect(result.body.toString()).toBe('hello world');
+      expect(result.wasDecompressed).toBe(true);
+    });
+  });
+
+  describe('broadcast() with compressed bodies', () => {
+    let mockWs;
+
+    beforeEach(() => {
+      mockWs = {
+        readyState: 1,
+        send: jest.fn(),
+        on: jest.fn(),
+        emit: jest.fn()
+      };
+      proxy.addWebSocketClient(mockWs);
+    });
+
+    test('decompresses gzip JSON response and prettifies', () => {
+      const json = '{"name":"John"}';
+      const compressed = zlib.gzipSync(Buffer.from(json));
+
+      proxy.broadcast({
+        type: 'traffic',
+        response: {
+          body: compressed,
+          headers: {
+            'content-type': 'application/json',
+            'content-encoding': 'gzip'
+          }
+        }
+      });
+
+      const sentData = JSON.parse(mockWs.send.mock.calls[0][0]);
+      expect(sentData.response.body).toBe('{\n  "name": "John"\n}');
+      expect(sentData.response.bodyMeta.contentType).toBe('json');
+      expect(sentData.response.bodyMeta.wasDecompressed).toBe(true);
+      expect(sentData.response.bodyMeta.originalEncoding).toBe('gzip');
     });
   });
 });
