@@ -47,6 +47,10 @@ wss.on('connection', (ws) => {
   const breakpoints = proxyServer.getBreakpoints();
   ws.send(JSON.stringify({ type: 'breakpointsList', breakpoints }));
 
+  // Send initial SSL proxying list
+  const sslProxyingList = proxyServer.getSslProxyingList();
+  ws.send(JSON.stringify({ type: 'sslProxyingList', patterns: sslProxyingList }));
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
@@ -106,6 +110,38 @@ wss.on('connection', (ws) => {
           const allBreakpoints = proxyServer.getBreakpoints();
           ws.send(JSON.stringify({ type: 'breakpointsList', breakpoints: allBreakpoints }));
           break;
+        case 'setSslProxy':
+          const sslConfig = proxyServer.setSslProxy(data.pattern, data.config || {});
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'sslProxySet', pattern: data.pattern, config: sslConfig }));
+            }
+          });
+          break;
+        case 'toggleSslProxy':
+          const toggledSsl = proxyServer.toggleSslProxy(data.pattern, data.enabled);
+          if (toggledSsl) {
+            wss.clients.forEach(client => {
+              if (client.readyState === 1) {
+                client.send(JSON.stringify({ type: 'sslProxyToggled', pattern: data.pattern, enabled: data.enabled, config: toggledSsl }));
+              }
+            });
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'SSL proxy pattern not found' }));
+          }
+          break;
+        case 'removeSslProxy':
+          proxyServer.removeSslProxy(data.pattern);
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'sslProxyRemoved', pattern: data.pattern }));
+            }
+          });
+          break;
+        case 'getSslProxyingList':
+          const allSslPatterns = proxyServer.getSslProxyingList();
+          ws.send(JSON.stringify({ type: 'sslProxyingList', patterns: allSslPatterns }));
+          break;
         case 'setMapping':
           proxyServer.setMapping(data.pattern, data.filePath);
           ws.send(JSON.stringify({ type: 'mappingSet', pattern: data.pattern }));
@@ -134,6 +170,23 @@ app.get('/setup', (req, res) => {
     .replace(/\{\{SERVER_IP\}\}/g, localIP)
     .replace(/\{\{PROXY_PORT\}\}/g, String(PROXY_PORT));
   res.send(injected);
+});
+
+app.post('/api/import-proxyman', (req, res) => {
+  try {
+    const fileContent = JSON.stringify(req.body);
+    const imported = proxyServer.importProxymanSslConfig(fileContent);
+    // Broadcast updated list to all WS clients
+    const patterns = proxyServer.getSslProxyingList();
+    wss.clients.forEach(client => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify({ type: 'sslProxyingList', patterns }));
+      }
+    });
+    res.json({ success: true, imported });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error.message });
+  }
 });
 
 app.get('/', (req, res) => {

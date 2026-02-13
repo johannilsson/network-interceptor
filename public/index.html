@@ -361,10 +361,11 @@
       font-size: 11px;
       color: var(--text-dim);
       padding: 4px 20px 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      overflow-x: auto;
       white-space: nowrap;
       user-select: all;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
 
     .detail-summary-tags {
@@ -446,7 +447,7 @@
 
     .detail-content {
       flex: 1;
-      overflow-y: auto;
+      overflow: auto;
       padding: 16px 20px;
       scrollbar-width: thin;
       scrollbar-color: var(--border) var(--bg-secondary);
@@ -503,8 +504,6 @@
       word-break: break-all;
       padding: 6px 0;
       border-bottom: 1px solid var(--border-subtle);
-      overflow: hidden;
-      text-overflow: ellipsis;
     }
 
     .code-block {
@@ -826,6 +825,25 @@
     .breakpoint-remove:hover {
       color: var(--text-primary);
     }
+
+    .ssl-kind-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      letter-spacing: 0.04em;
+      font-family: 'DM Sans', sans-serif;
+    }
+
+    .ssl-kind-badge.domain {
+      background: rgba(126,184,240,0.12);
+      color: var(--method-post);
+    }
+
+    .ssl-kind-badge.wildcard {
+      background: rgba(160,139,212,0.12);
+      color: var(--accent-tertiary);
+    }
   </style>
 </head>
 <body>
@@ -840,6 +858,7 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="header-button" onclick="openSslProxyingModal()">SSL Proxying</button>
         <button class="header-button" onclick="openBreakpointsModal()">Breakpoints</button>
         <button class="header-button" onclick="openMappingsModal()">Mappings</button>
         <button class="header-button" onclick="clearTraffic()">Clear</button>
@@ -980,6 +999,40 @@
       <div class="modal-footer">
         <button class="button" onclick="continueRequest()">Continue Original</button>
         <button class="button primary" onclick="respondCustom()">Respond Custom</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SSL Proxying Modal -->
+  <div class="modal" id="sslProxyingModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">SSL Proxying</h2>
+        <button class="modal-close" onclick="closeModal('sslProxyingModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 14px; line-height: 1.6;">
+          Only domains matching these patterns will be MITM-intercepted. All other HTTPS traffic is tunneled through without decryption. If empty, all HTTPS traffic is intercepted.
+        </p>
+        <div class="form-group" style="display: flex; gap: 8px; align-items: flex-end;">
+          <div style="flex: 1;">
+            <label class="form-label">Domain / Pattern</label>
+            <input type="text" class="form-input" id="sslProxyPattern" placeholder="e.g., example.com or *api*">
+          </div>
+          <div style="width: 120px;">
+            <label class="form-label">Kind</label>
+            <select class="form-input" id="sslProxyKind" style="padding: 8px 8px;">
+              <option value="wildcard">Wildcard</option>
+              <option value="domain">Domain</option>
+            </select>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 4px;">
+          <button class="button primary" onclick="addSslProxy()">Add Pattern</button>
+          <button class="button" onclick="importProxyman()">Import from Proxyman</button>
+          <input type="file" id="proxymanFileInput" accept=".config,.json" style="display: none;" onchange="handleProxymanFile(event)">
+        </div>
+        <ul class="breakpoint-list" id="sslProxyList"></ul>
       </div>
     </div>
   </div>

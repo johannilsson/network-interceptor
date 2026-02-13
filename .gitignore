@@ -9,6 +9,9 @@ ca-key.pem
 # User-specific breakpoints
 breakpoints.json
 
+# SSL proxying list
+ssl-proxying.json
+
 # Environment variables
 .env
 .env.local

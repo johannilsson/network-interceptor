@@ -5,6 +5,7 @@ let currentTab = 'headers';
 let breakpointRequest = null;
 let breakpoints = new Map();
 let mappings = new Map();
+let sslProxyingList = new Map();
 let editingPattern = null;
 
 // Initialize WebSocket connection
@@ -72,6 +73,31 @@ function handleWebSocketMessage(data) {
       }
       renderBreakpointList();
       console.log('Loaded', data.breakpoints.length, 'breakpoints');
+      break;
+    case 'sslProxyingList':
+      sslProxyingList.clear();
+      for (const entry of data.patterns) {
+        sslProxyingList.set(entry.pattern, entry);
+      }
+      renderSslProxyList();
+      console.log('Loaded', data.patterns.length, 'SSL proxying patterns');
+      break;
+    case 'sslProxySet':
+      sslProxyingList.set(data.pattern, data.config);
+      renderSslProxyList();
+      console.log('SSL proxy pattern added:', data.pattern);
+      break;
+    case 'sslProxyRemoved':
+      sslProxyingList.delete(data.pattern);
+      renderSslProxyList();
+      console.log('SSL proxy pattern removed:', data.pattern);
+      break;
+    case 'sslProxyToggled':
+      if (data.config) {
+        sslProxyingList.set(data.pattern, data.config);
+        renderSslProxyList();
+      }
+      console.log('SSL proxy toggled:', data.pattern, data.enabled);
       break;
     case 'error':
       console.error('WebSocket error:', data.message);
@@ -622,6 +648,117 @@ function respondCustom() {
   closeModal('breakpointActionModal');
   document.getElementById('customResponseBody').value = '';
   document.getElementById('customStatusCode').value = '';
+}
+
+// SSL Proxying functions
+function openSslProxyingModal() {
+  document.getElementById('sslProxyingModal').classList.add('show');
+  renderSslProxyList();
+}
+
+function addSslProxy() {
+  const pattern = document.getElementById('sslProxyPattern').value.trim();
+  const kind = document.getElementById('sslProxyKind').value;
+  if (!pattern) {
+    alert('Domain pattern is required');
+    return;
+  }
+
+  ws.send(JSON.stringify({
+    type: 'setSslProxy',
+    pattern,
+    config: { kind, enabled: true }
+  }));
+
+  document.getElementById('sslProxyPattern').value = '';
+}
+
+function removeSslProxy(pattern) {
+  ws.send(JSON.stringify({
+    type: 'removeSslProxy',
+    pattern
+  }));
+}
+
+function toggleSslProxy(pattern) {
+  const entry = sslProxyingList.get(pattern);
+  if (!entry) return;
+
+  ws.send(JSON.stringify({
+    type: 'toggleSslProxy',
+    pattern,
+    enabled: !entry.enabled
+  }));
+}
+
+function importProxyman() {
+  document.getElementById('proxymanFileInput').click();
+}
+
+function handleProxymanFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    try {
+      const content = JSON.parse(e.target.result);
+      const resp = await fetch('/api/import-proxyman', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(content)
+      });
+      const result = await resp.json();
+      if (result.success) {
+        alert(`Imported ${result.imported} SSL proxying rules from Proxyman`);
+      } else {
+        alert('Import failed: ' + result.error);
+      }
+    } catch (err) {
+      alert('Failed to parse file: ' + err.message);
+    }
+    // Reset file input so same file can be re-imported
+    event.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function renderSslProxyList() {
+  const list = document.getElementById('sslProxyList');
+  if (!list) return;
+
+  if (sslProxyingList.size === 0) {
+    list.innerHTML = '<p style="color: var(--text-dim); margin-top: 1rem;">No patterns set — all HTTPS traffic is intercepted</p>';
+    return;
+  }
+
+  list.innerHTML = Array.from(sslProxyingList.entries()).map(([pattern, config]) => {
+    const isEnabled = config.enabled !== false;
+    const kind = config.kind || 'wildcard';
+    const displayName = config.name || config.pattern;
+    const hasName = !!config.name;
+
+    return `
+      <li class="breakpoint-item ${!isEnabled ? 'breakpoint-disabled' : ''}">
+        <div class="breakpoint-info">
+          <div class="breakpoint-header">
+            <span class="ssl-kind-badge ${kind}">${kind.toUpperCase()}</span>
+            <span class="breakpoint-pattern">${escapeHtml(displayName)}</span>
+            <span class="breakpoint-status-badge ${isEnabled ? 'active' : 'disabled'}">
+              ${isEnabled ? 'ACTIVE' : 'DISABLED'}
+            </span>
+          </div>
+          ${hasName ? `<div class="breakpoint-subtext">${escapeHtml(config.pattern)}</div>` : ''}
+        </div>
+        <div class="breakpoint-actions">
+          <button class="breakpoint-toggle" onclick="toggleSslProxy('${escapeHtml(pattern)}')">
+            ${isEnabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="breakpoint-remove" onclick="removeSslProxy('${escapeHtml(pattern)}')">Remove</button>
+        </div>
+      </li>
+    `;
+  }).join('');
 }
 
 // Close modal on background click
