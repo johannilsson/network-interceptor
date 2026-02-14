@@ -1,5 +1,5 @@
 {
-  "name": "network-interceptor",
+  "name": "intercept",
   "version": "1.0.0",
   "description": "Network traffic interceptor with HTTPS support",
   "main": "server.js",

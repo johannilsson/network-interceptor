@@ -29,12 +29,10 @@ app.use(express.static('public'));
 const proxyServer = new ProxyServer(PROXY_PORT);
 proxyServer.start();
 
+
 // Create HTTP server
-const server = app.listen(PORT, () => {
-  console.log(`Web interface running on http://localhost:${PORT}`);
-  console.log(`Proxy server running on port ${PROXY_PORT}`);
-  console.log('\nIMPORTANT: Install ca-cert.pem as a trusted root certificate to intercept HTTPS traffic.');
-});
+const server = app.listen(PORT);
+
 
 // WebSocket server
 const wss = new WebSocket.Server({ server });
@@ -160,7 +158,7 @@ wss.on('connection', (ws) => {
 
 // API endpoints
 app.get('/api/ca-cert', (req, res) => {
-  res.download(path.join(__dirname, 'ca-cert.pem'), 'network-interceptor-ca.pem');
+  res.download(path.join(__dirname, 'ca-cert.pem'), 'intercept-ca.pem');
 });
 
 app.get('/setup', (req, res) => {
