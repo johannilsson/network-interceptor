@@ -234,6 +234,13 @@ function updateDetailSummary() {
   if (response?.custom) {
     tags.push(`<span class="detail-summary-tag" style="background: rgba(160,139,212,0.12); color: var(--accent-tertiary);">Custom</span>`);
   }
+  if (request.tunneled) {
+    tags.push(`<span class="detail-summary-tag" style="background: rgba(138,135,128,0.12); color: var(--text-secondary);">Tunneled</span>`);
+    const host = new URL(request.url).hostname;
+    if (!sslProxyingList.has(host)) {
+      tags.push(`<button class="detail-summary-tag" onclick="enableSslProxying('${host}', event)" style="background: rgba(83,160,234,0.12); color: var(--accent-primary); cursor: pointer; border: none;">Enable SSL Proxying</button>`);
+    }
+  }
   document.getElementById('summaryTags').innerHTML = tags.join('');
 
   const statusEl = document.getElementById('summaryStatus');
@@ -651,6 +658,14 @@ function respondCustom() {
 }
 
 // SSL Proxying functions
+function enableSslProxying(hostname, event) {
+  ws.send(JSON.stringify({ type: 'setSslProxy', pattern: hostname, config: { kind: 'domain', enabled: true } }));
+  const btn = event.target;
+  btn.textContent = 'Enabled — next request will be decrypted';
+  btn.disabled = true;
+  btn.style.cursor = 'default';
+}
+
 function openSslProxyingModal() {
   document.getElementById('sslProxyingModal').classList.add('show');
   renderSslProxyList();
