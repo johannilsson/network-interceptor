@@ -170,22 +170,6 @@ app.get('/setup', (req, res) => {
   res.send(injected);
 });
 
-app.post('/api/import-proxyman', (req, res) => {
-  try {
-    const fileContent = JSON.stringify(req.body);
-    const imported = proxyServer.importProxymanSslConfig(fileContent);
-    // Broadcast updated list to all WS clients
-    const patterns = proxyServer.getSslProxyingList();
-    wss.clients.forEach(client => {
-      if (client.readyState === 1) {
-        client.send(JSON.stringify({ type: 'sslProxyingList', patterns }));
-      }
-    });
-    res.json({ success: true, imported });
-  } catch (error) {
-    res.status(400).json({ success: false, error: error.message });
-  }
-});
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

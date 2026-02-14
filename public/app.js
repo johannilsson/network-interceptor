@@ -691,37 +691,6 @@ function toggleSslProxy(pattern) {
   }));
 }
 
-function importProxyman() {
-  document.getElementById('proxymanFileInput').click();
-}
-
-function handleProxymanFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    try {
-      const content = JSON.parse(e.target.result);
-      const resp = await fetch('/api/import-proxyman', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(content)
-      });
-      const result = await resp.json();
-      if (result.success) {
-        alert(`Imported ${result.imported} SSL proxying rules from Proxyman`);
-      } else {
-        alert('Import failed: ' + result.error);
-      }
-    } catch (err) {
-      alert('Failed to parse file: ' + err.message);
-    }
-    // Reset file input so same file can be re-imported
-    event.target.value = '';
-  };
-  reader.readAsText(file);
-}
 
 function renderSslProxyList() {
   const list = document.getElementById('sslProxyList');

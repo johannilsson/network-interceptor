@@ -890,57 +890,6 @@ class ProxyServer {
     return existing;
   }
 
-  importProxymanSslConfig(fileContent) {
-    const parsed = JSON.parse(fileContent);
-    const b64 = parsed.sslProxyingData?.data;
-    if (!b64) throw new Error('No sslProxyingData.data found in config');
-
-    const decoded = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'));
-    const includeList = decoded.includeList || [];
-
-    let imported = 0;
-    for (const rule of includeList) {
-      if (!rule.isEnabled) continue;
-
-      // kind is an object like { "domain": [...] } or { "wildcard": [...] }
-      const kindKey = typeof rule.kind === 'string' ? rule.kind : Object.keys(rule.kind)[0];
-      if (kindKey === 'client') continue;
-
-      let pattern, kind;
-      if (kindKey === 'domain') {
-        const domainEntry = rule.kind.domain?.[0];
-        pattern = domainEntry?.url;
-        kind = 'domain';
-      } else if (kindKey === 'wildcard') {
-        const wildcardEntry = rule.kind.wildcard?.[0];
-        pattern = wildcardEntry?.wildcard;
-        kind = 'wildcard';
-      } else {
-        continue;
-      }
-
-      if (!pattern) continue;
-
-      // Strip protocol prefix for wildcard patterns matching hostnames
-      if (kind === 'wildcard') {
-        pattern = pattern.replace(/^https?:\/\//, '');
-      }
-
-      if (!this.sslProxyingList.has(pattern)) {
-        this.sslProxyingList.set(pattern, {
-          pattern,
-          name: rule.name || undefined,
-          enabled: true,
-          kind,
-          createdAt: new Date().toISOString()
-        });
-        imported++;
-      }
-    }
-
-    this.saveSslProxyingToFile();
-    return imported;
-  }
 
   removeSslProxy(pattern) {
     this.sslProxyingList.delete(pattern);
