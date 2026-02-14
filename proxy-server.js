@@ -1,7 +1,6 @@
 const http = require('http');
 const https = require('https');
 const net = require('net');
-const url = require('url');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -48,9 +47,9 @@ function generateCACertificate() {
   cert.validity.notAfter.setFullYear(cert.validity.notBefore.getFullYear() + 10);
 
   const attrs = [
-    { name: 'commonName', value: 'Network Interceptor CA' },
+    { name: 'commonName', value: 'Intercept CA' },
     { name: 'countryName', value: 'US' },
-    { name: 'organizationName', value: 'Network Interceptor' }
+    { name: 'organizationName', value: 'Intercept' }
   ];
 
   cert.setSubject(attrs);
@@ -151,9 +150,7 @@ class ProxyServer {
       this.handleConnect(req, clientSocket, head);
     });
 
-    this.server.listen(this.port, () => {
-      console.log(`Proxy server running on port ${this.port}`);
-    });
+    this.server.listen(this.port);
   }
 
   addWebSocketClient(ws) {
@@ -266,11 +263,11 @@ class ProxyServer {
   }
 
   async forwardRequest(requestData, clientRes) {
-    const parsedUrl = url.parse(requestData.url);
+    const parsedUrl = new URL(requestData.url);
     const options = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
-      path: parsedUrl.path,
+      path: parsedUrl.pathname + parsedUrl.search,
       method: requestData.method,
       headers: requestData.headers
     };
