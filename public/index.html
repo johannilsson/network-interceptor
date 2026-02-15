@@ -844,6 +844,25 @@
       background: rgba(160,139,212,0.12);
       color: var(--accent-tertiary);
     }
+
+    .record-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .record-dot.recording {
+      background: var(--accent-error);
+      animation: blink 1s infinite;
+    }
+
+    .record-btn.recording {
+      color: var(--accent-error);
+    }
   </style>
 </head>
 <body>
@@ -861,6 +880,8 @@
         <button class="header-button" onclick="openSslProxyingModal()">SSL Proxying</button>
         <button class="header-button" onclick="openBreakpointsModal()">Breakpoints</button>
         <button class="header-button" onclick="openMappingsModal()">Mappings</button>
+        <button class="header-button record-btn" id="recordBtn" onclick="toggleRecording()"><span class="record-dot"></span>Record</button>
+        <button class="header-button" onclick="openRecordingsModal()">Recordings</button>
         <button class="header-button" onclick="clearTraffic()">Clear</button>
       </div>
     </header>
@@ -1031,6 +1052,21 @@
           <button class="button primary" onclick="addSslProxy()">Add Pattern</button>
         </div>
         <ul class="breakpoint-list" id="sslProxyList"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recordings Modal -->
+  <div class="modal" id="recordingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Recordings</h2>
+        <button class="modal-close" onclick="closeModal('recordingsModal')">×</button>
+      </div>
+      <div class="modal-body">
+        <ul class="breakpoint-list" id="recordingsList">
+          <p style="color: var(--text-dim); margin-top: 1rem;">No recordings yet</p>
+        </ul>
       </div>
     </div>
   </div>

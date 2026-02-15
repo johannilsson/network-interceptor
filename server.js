@@ -49,6 +49,13 @@ wss.on('connection', (ws) => {
   const sslProxyingList = proxyServer.getSslProxyingList();
   ws.send(JSON.stringify({ type: 'sslProxyingList', patterns: sslProxyingList }));
 
+  // Send current recording state
+  ws.send(JSON.stringify({
+    type: 'recordingState',
+    recording: proxyServer.isRecording(),
+    filename: proxyServer.recording?.filename || null
+  }));
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);
@@ -140,6 +147,24 @@ wss.on('connection', (ws) => {
           const allSslPatterns = proxyServer.getSslProxyingList();
           ws.send(JSON.stringify({ type: 'sslProxyingList', patterns: allSslPatterns }));
           break;
+        case 'startRecording': {
+          const filename = proxyServer.startRecording();
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'recordingStarted', filename }));
+            }
+          });
+          break;
+        }
+        case 'stopRecording': {
+          const stoppedFilename = proxyServer.stopRecording();
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'recordingStopped', filename: stoppedFilename }));
+            }
+          });
+          break;
+        }
         case 'setMapping':
           proxyServer.setMapping(data.pattern, data.filePath);
           ws.send(JSON.stringify({ type: 'mappingSet', pattern: data.pattern }));
@@ -159,6 +184,31 @@ wss.on('connection', (ws) => {
 // API endpoints
 app.get('/api/ca-cert', (req, res) => {
   res.download(path.join(__dirname, 'ca-cert.pem'), 'intercept-ca.pem');
+});
+
+app.get('/api/recordings', (req, res) => {
+  res.json(proxyServer.getRecordings());
+});
+
+app.get('/api/recordings/:filename', (req, res) => {
+  const filename = req.params.filename;
+  if (filename.includes('/') || filename.includes('\\') || filename.includes('..') || !filename.endsWith('.ndjson')) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  const filePath = path.join(proxyServer.recordingsDir, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  res.download(filePath, filename);
+});
+
+app.delete('/api/recordings/:filename', (req, res) => {
+  try {
+    proxyServer.deleteRecording(req.params.filename);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 app.get('/setup', (req, res) => {

@@ -130,6 +130,8 @@ class ProxyServer {
     this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
     this.breakpointsFilePath = options.breakpointsFilePath || path.join(__dirname, 'breakpoints.json');
     this.sslProxyingFilePath = options.sslProxyingFilePath || path.join(__dirname, 'ssl-proxying.json');
+    this.recording = null; // when active: { filename, stream }
+    this.recordingsDir = path.join(__dirname, 'recordings');
 
     const ca = generateCACertificate();
     this.caCert = ca.cert;
@@ -190,12 +192,67 @@ class ProxyServer {
       broadcastData.response = { ...broadcastData.response, ...processed };
     }
 
+    // Write to recording if active
+    if (this.recording) {
+      this.writeRecordingEntry(broadcastData);
+    }
+
     const message = JSON.stringify(broadcastData);
     this.webSocketClients.forEach(ws => {
       if (ws.readyState === 1) { // OPEN
         ws.send(message);
       }
     });
+  }
+
+  writeRecordingEntry(broadcastData) {
+    if (!this.recording) return;
+
+    const ts = Date.now();
+    const req = broadcastData.request;
+    if (!req) return;
+
+    // Parse URL for pre-parsed fields
+    let host = '', urlPath = '', query = '';
+    try {
+      const parsed = new URL(req.url);
+      host = parsed.host;
+      urlPath = parsed.pathname;
+      query = parsed.search ? parsed.search.slice(1) : '';
+    } catch (e) {
+      // URL parsing failed, use raw url
+    }
+
+    const requestEntry = {
+      ts,
+      id: req.id,
+      dir: 'request',
+      method: req.method,
+      url: req.url,
+      host,
+      path: urlPath,
+      query,
+      headers: req.headers,
+      body: req.body ? (Buffer.isBuffer(req.body) ? req.body.toString('base64') : req.body) : undefined,
+      bodyMeta: req.bodyMeta
+    };
+
+    this.recording.stream.write(JSON.stringify(requestEntry) + '\n');
+
+    if (broadcastData.type === 'traffic' && broadcastData.response) {
+      const res = broadcastData.response;
+      const responseEntry = {
+        ts,
+        id: res.id,
+        dir: 'response',
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+        body: res.body ? (Buffer.isBuffer(res.body) ? res.body.toString('base64') : res.body) : undefined,
+        bodyMeta: res.bodyMeta
+      };
+      this.recording.stream.write(JSON.stringify(responseEntry) + '\n');
+    }
   }
 
   async handleHttpRequest(clientReq, clientRes) {
@@ -562,6 +619,59 @@ class ProxyServer {
         encoding: 'utf8'
       }
     };
+  }
+
+  startRecording() {
+    if (this.recording) return this.recording.filename;
+
+    if (!fs.existsSync(this.recordingsDir)) {
+      fs.mkdirSync(this.recordingsDir, { recursive: true });
+    }
+
+    const filename = new Date().toISOString().replace(/[:.]/g, '-') + '.ndjson';
+    const filePath = path.join(this.recordingsDir, filename);
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    this.recording = { filename, stream };
+    return filename;
+  }
+
+  stopRecording() {
+    if (!this.recording) return null;
+    const { filename, stream } = this.recording;
+    this.recording = null;
+    stream.end();
+    return filename;
+  }
+
+  isRecording() {
+    return this.recording !== null;
+  }
+
+  getRecordings() {
+    if (!fs.existsSync(this.recordingsDir)) return [];
+    const files = fs.readdirSync(this.recordingsDir);
+    return files
+      .filter(f => f.endsWith('.ndjson'))
+      .map(filename => {
+        const stat = fs.statSync(path.join(this.recordingsDir, filename));
+        return { filename, size: stat.size, createdAt: stat.birthtime.toISOString() };
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  deleteRecording(filename) {
+    // Validate filename to prevent path traversal
+    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+      throw new Error('Invalid filename');
+    }
+    if (!filename.endsWith('.ndjson')) {
+      throw new Error('Invalid filename');
+    }
+    const filePath = path.join(this.recordingsDir, filename);
+    if (!fs.existsSync(filePath)) {
+      throw new Error('Recording not found');
+    }
+    fs.unlinkSync(filePath);
   }
 
   checkBreakpoint(url) {

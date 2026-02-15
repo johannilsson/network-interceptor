@@ -7,6 +7,7 @@ let breakpoints = new Map();
 let mappings = new Map();
 let sslProxyingList = new Map();
 let editingPattern = null;
+let isRecording = false;
 
 // Initialize WebSocket connection
 function initWebSocket() {
@@ -98,6 +99,18 @@ function handleWebSocketMessage(data) {
         renderSslProxyList();
       }
       console.log('SSL proxy toggled:', data.pattern, data.enabled);
+      break;
+    case 'recordingState':
+      isRecording = data.recording;
+      updateRecordButton();
+      break;
+    case 'recordingStarted':
+      isRecording = true;
+      updateRecordButton();
+      break;
+    case 'recordingStopped':
+      isRecording = false;
+      updateRecordButton();
       break;
     case 'error':
       console.error('WebSocket error:', data.message);
@@ -743,6 +756,78 @@ function renderSslProxyList() {
       </li>
     `;
   }).join('');
+}
+
+// Recording functions
+function updateRecordButton() {
+  const btn = document.getElementById('recordBtn');
+  if (!btn) return;
+  if (isRecording) {
+    btn.innerHTML = '<span class="record-dot recording"></span>Stop';
+    btn.classList.add('recording');
+  } else {
+    btn.innerHTML = '<span class="record-dot"></span>Record';
+    btn.classList.remove('recording');
+  }
+}
+
+function toggleRecording() {
+  ws.send(JSON.stringify({ type: isRecording ? 'stopRecording' : 'startRecording' }));
+}
+
+function openRecordingsModal() {
+  const modal = document.getElementById('recordingsModal');
+  modal.classList.add('show');
+  fetchRecordings();
+}
+
+function fetchRecordings() {
+  fetch('/api/recordings')
+    .then(res => res.json())
+    .then(recordings => renderRecordingsList(recordings))
+    .catch(err => console.error('Failed to fetch recordings:', err));
+}
+
+function renderRecordingsList(recordings) {
+  const list = document.getElementById('recordingsList');
+  if (!list) return;
+
+  if (recordings.length === 0) {
+    list.innerHTML = '<p style="color: var(--text-dim); margin-top: 1rem;">No recordings yet</p>';
+    return;
+  }
+
+  list.innerHTML = recordings.map(rec => {
+    const date = new Date(rec.createdAt);
+    const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const timeStr = date.toLocaleTimeString('en-US', { hour12: false });
+    const sizeStr = rec.size >= 1024 * 1024
+      ? (rec.size / (1024 * 1024)).toFixed(1) + ' MB'
+      : rec.size >= 1024
+        ? (rec.size / 1024).toFixed(1) + ' KB'
+        : rec.size + ' B';
+
+    return `
+      <li class="breakpoint-item">
+        <div class="breakpoint-info">
+          <div class="breakpoint-pattern">${escapeHtml(rec.filename)}</div>
+          <div class="breakpoint-subtext">${dateStr} ${timeStr} — ${sizeStr}</div>
+        </div>
+        <div class="breakpoint-actions">
+          <a class="breakpoint-edit" href="/api/recordings/${encodeURIComponent(rec.filename)}" download="${escapeHtml(rec.filename)}" style="text-decoration:none;">Download</a>
+          <button class="breakpoint-remove" onclick="deleteRecording('${escapeHtml(rec.filename)}')">Delete</button>
+        </div>
+      </li>
+    `;
+  }).join('');
+}
+
+function deleteRecording(filename) {
+  if (!confirm('Delete this recording?')) return;
+  fetch('/api/recordings/' + encodeURIComponent(filename), { method: 'DELETE' })
+    .then(res => res.json())
+    .then(() => fetchRecordings())
+    .catch(err => console.error('Failed to delete recording:', err));
 }
 
 // Close modal on background click
