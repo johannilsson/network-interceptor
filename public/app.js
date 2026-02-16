@@ -1,6 +1,7 @@
 let ws;
 let trafficData = [];
 let selectedRequest = null;
+let filteredTraffic = [];
 let currentTab = 'headers';
 let breakpointRequest = null;
 let breakpoints = new Map();
@@ -157,6 +158,8 @@ function renderTrafficList() {
     entry.request.url.toLowerCase().includes(filter)
   );
   
+  filteredTraffic = filtered;
+
   if (filtered.length === 0) {
     list.innerHTML = `
       <div class="empty-state">
@@ -168,7 +171,7 @@ function renderTrafficList() {
     `;
     return;
   }
-  
+
   list.innerHTML = filtered.map((entry, index) => {
     const method = entry.request.method;
     const url = new URL(entry.request.url);
@@ -176,9 +179,9 @@ function renderTrafficList() {
     const status = entry.response?.status || 'pending';
     const statusClass = getStatusClass(status);
     const isSelected = selectedRequest?.request.id === entry.request.id;
-    
+
     return `
-      <div class="traffic-item ${isSelected ? 'selected' : ''}" onclick="selectRequest(${trafficData.indexOf(entry)})">
+      <div class="traffic-item ${isSelected ? 'selected' : ''}" data-filtered-index="${index}" onclick="selectRequest(${trafficData.indexOf(entry)})">
         <div>
           <span class="traffic-method method-${method}">${method}</span>
           <span class="traffic-url">${pathname}</span>
@@ -830,13 +833,80 @@ function deleteRecording(filename) {
     .catch(err => console.error('Failed to delete recording:', err));
 }
 
-// Close modal on background click
-document.querySelectorAll('.modal').forEach(modal => {
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('show');
+// Keyboard navigation for traffic list
+document.addEventListener('keydown', (e) => {
+  if (document.querySelector('.modal.show')) return;
+  // Shortcuts (only when not in an input)
+  if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+    if (e.key === 's') {
+      e.preventDefault();
+      document.getElementById('filterInput').focus();
+      return;
     }
-  });
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      clearTraffic();
+      return;
+    }
+  }
+
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+
+  const filterInput = document.getElementById('filterInput');
+  const inFilter = e.target === filterInput;
+
+  // Arrow Down from filter input: move focus to the list
+  if (inFilter && e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (filteredTraffic.length === 0) return;
+    filterInput.blur();
+    const firstIndex = selectedRequest
+      ? filteredTraffic.findIndex(entry => entry.request.id === selectedRequest.request.id)
+      : 0;
+    const entry = filteredTraffic[firstIndex === -1 ? 0 : firstIndex];
+    selectRequest(trafficData.indexOf(entry));
+    const item = document.querySelector(`[data-filtered-index="${firstIndex === -1 ? 0 : firstIndex}"]`);
+    if (item) item.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
+  // Ignore other keys while in inputs
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  e.preventDefault();
+  if (filteredTraffic.length === 0) return;
+
+  const currentIndex = selectedRequest
+    ? filteredTraffic.findIndex(entry => entry.request.id === selectedRequest.request.id)
+    : -1;
+
+  // Arrow Up from first item: focus back to filter input
+  if (e.key === 'ArrowUp' && currentIndex <= 0) {
+    filterInput.focus();
+    return;
+  }
+
+  let nextIndex;
+  if (e.key === 'ArrowDown') {
+    nextIndex = currentIndex < filteredTraffic.length - 1 ? currentIndex + 1 : currentIndex;
+  } else {
+    nextIndex = currentIndex > 0 ? currentIndex - 1 : 0;
+  }
+
+  const entry = filteredTraffic[nextIndex];
+  selectRequest(trafficData.indexOf(entry));
+
+  const item = document.querySelector(`[data-filtered-index="${nextIndex}"]`);
+  if (item) item.scrollIntoView({ block: 'nearest' });
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal.show').forEach(modal => {
+      modal.classList.remove('show');
+    });
+  }
 });
 
 // Initialize
