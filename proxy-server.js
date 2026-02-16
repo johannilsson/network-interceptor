@@ -128,6 +128,8 @@ class ProxyServer {
     this.requestQueue = new Map(); // Request ID -> request data
     this.requestIdCounter = 0;
     this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
+    this.trafficHistory = [];
+    this.maxTrafficHistory = 1000;
     this.breakpointsFilePath = options.breakpointsFilePath || path.join(__dirname, 'breakpoints.json');
     this.sslProxyingFilePath = options.sslProxyingFilePath || path.join(__dirname, 'ssl-proxying.json');
     this.mappingsFilePath = options.mappingsFilePath || path.join(__dirname, 'mappings.json');
@@ -161,6 +163,10 @@ class ProxyServer {
   addWebSocketClient(ws) {
     this.webSocketClients.add(ws);
     ws.on('close', () => this.webSocketClients.delete(ws));
+  }
+
+  getTrafficHistory() {
+    return this.trafficHistory;
   }
 
   broadcast(data) {
@@ -198,6 +204,14 @@ class ProxyServer {
     // Write to recording if active
     if (this.recording) {
       this.writeRecordingEntry(broadcastData);
+    }
+
+    // Store traffic entries in history buffer for replay on new connections
+    if (broadcastData.type === 'traffic') {
+      this.trafficHistory.push(broadcastData);
+      if (this.trafficHistory.length > this.maxTrafficHistory) {
+        this.trafficHistory.shift();
+      }
     }
 
     const message = JSON.stringify(broadcastData);

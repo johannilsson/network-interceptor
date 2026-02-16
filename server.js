@@ -60,6 +60,12 @@ wss.on('connection', (ws) => {
     filename: proxyServer.recording?.filename || null
   }));
 
+  // Send traffic history for replay
+  const trafficHistory = proxyServer.getTrafficHistory();
+  if (trafficHistory.length > 0) {
+    ws.send(JSON.stringify({ type: 'trafficHistory', entries: trafficHistory }));
+  }
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message);

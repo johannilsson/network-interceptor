@@ -145,6 +145,16 @@ function handleWebSocketMessage(data) {
       }
       console.log('Mapping toggled:', data.pattern, data.enabled);
       break;
+    case 'trafficHistory':
+      // Only replay if we have no traffic yet (avoid duplicates on reconnect)
+      if (trafficData.length === 0 && data.entries && data.entries.length > 0) {
+        // Entries are in chronological order (oldest first), add each one
+        for (const entry of data.entries) {
+          addTrafficEntry(entry.request, entry.response);
+        }
+        console.log('Replayed', data.entries.length, 'traffic history entries');
+      }
+      break;
   }
 }
 
