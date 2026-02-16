@@ -351,9 +351,7 @@
       font-size: 13px;
       font-weight: 500;
       color: var(--text-primary);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      word-break: break-all;
     }
 
     .detail-summary-url {
@@ -361,11 +359,8 @@
       font-size: 11px;
       color: var(--text-dim);
       padding: 4px 20px 0;
-      overflow-x: auto;
-      white-space: nowrap;
+      word-break: break-all;
       user-select: all;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
     }
 
     .detail-summary-tags {
