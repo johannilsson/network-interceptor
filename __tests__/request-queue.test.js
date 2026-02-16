@@ -85,12 +85,12 @@ describe('Request Queue Management', () => {
       });
 
       // Mock forwardRequest to prevent actual network call
-      proxyServer.forwardRequest = jest.fn();
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn();
 
       proxyServer.continueRequest(1);
 
       expect(proxyServer.requestQueue.has(1)).toBe(false);
-      expect(proxyServer.forwardRequest).toHaveBeenCalledWith(requestData, mockClientRes);
+      expect(proxyServer.forwardRequestWithResponseBreakpoint).toHaveBeenCalledWith(requestData, mockClientRes);
     });
 
     test('should clear timeout when continuing request', () => {
@@ -103,7 +103,7 @@ describe('Request Queue Management', () => {
         timeoutId
       });
 
-      proxyServer.forwardRequest = jest.fn();
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn();
       const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
 
       proxyServer.continueRequest(1);
@@ -133,7 +133,7 @@ describe('Request Queue Management', () => {
         clientRes: mockClientRes
       });
 
-      proxyServer.forwardRequest = jest.fn();
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn();
 
       const customRequest = {
         headers: { 'User-Agent': 'Modified', 'X-Custom': 'Header' }
@@ -141,8 +141,8 @@ describe('Request Queue Management', () => {
 
       proxyServer.continueRequest(1, customRequest);
 
-      expect(proxyServer.forwardRequest).toHaveBeenCalled();
-      const forwardedRequest = proxyServer.forwardRequest.mock.calls[0][0];
+      expect(proxyServer.forwardRequestWithResponseBreakpoint).toHaveBeenCalled();
+      const forwardedRequest = proxyServer.forwardRequestWithResponseBreakpoint.mock.calls[0][0];
       expect(forwardedRequest.headers).toEqual({ 'User-Agent': 'Modified', 'X-Custom': 'Header' });
     });
 
@@ -154,7 +154,7 @@ describe('Request Queue Management', () => {
       });
 
       const error = new Error('Network error');
-      proxyServer.forwardRequest = jest.fn(() => {
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn(() => {
         throw error;
       });
 
@@ -261,7 +261,7 @@ describe('Request Queue Management', () => {
     test('should auto-continue request after timeout', () => {
       const requestData = { id: 1, url: 'https://example.com' };
 
-      proxyServer.forwardRequest = jest.fn();
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn();
       proxyServer.continueRequest = jest.fn();
 
       // Manually simulate what would happen with a timeout
@@ -286,7 +286,7 @@ describe('Request Queue Management', () => {
     test('should not auto-continue if manually continued before timeout', () => {
       const requestData = { id: 1, url: 'https://example.com' };
 
-      proxyServer.forwardRequest = jest.fn();
+      proxyServer.forwardRequestWithResponseBreakpoint = jest.fn();
 
       const timeoutCallback = jest.fn(() => {
         proxyServer.continueRequest(1);
@@ -306,7 +306,7 @@ describe('Request Queue Management', () => {
       jest.advanceTimersByTime(120000);
 
       // continueRequest should have been called only once (manual), not twice
-      expect(proxyServer.forwardRequest).toHaveBeenCalledTimes(1);
+      expect(proxyServer.forwardRequestWithResponseBreakpoint).toHaveBeenCalledTimes(1);
     });
   });
 

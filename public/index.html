@@ -998,23 +998,42 @@
   <div class="modal" id="breakpointActionModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h2 class="modal-title">Breakpoint Hit</h2>
+        <h2 class="modal-title" id="breakpointActionTitle">Breakpoint — Request</h2>
         <button class="modal-close" onclick="closeModal('breakpointActionModal')">×</button>
       </div>
       <div class="modal-body">
         <div id="breakpointRequestDetails"></div>
-        <div class="form-group">
-          <label class="form-label">Custom Response Body (optional)</label>
-          <textarea class="form-input form-textarea" id="customResponseBody" placeholder='{"message": "Custom response"}'></textarea>
+
+        <!-- Request Phase -->
+        <div id="breakpointRequestPhase">
+          <div class="form-group">
+            <label class="form-label">Request Body</label>
+            <textarea class="form-input form-textarea" id="breakpointRequestBody" placeholder="Request body (empty if none)"></textarea>
+          </div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Status Code (optional)</label>
-          <input type="number" class="form-input" id="customStatusCode" placeholder="200">
+
+        <!-- Response Phase -->
+        <div id="breakpointResponsePhase" style="display: none;">
+          <div class="form-group">
+            <label class="form-label">Status Code</label>
+            <input type="number" class="form-input" id="breakpointResponseStatus" placeholder="200">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Response Body</label>
+            <textarea class="form-input form-textarea" id="breakpointResponseBody" placeholder="Response body"></textarea>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
-        <button class="button" onclick="continueRequest()">Continue Original</button>
-        <button class="button primary" onclick="respondCustom()">Respond Custom</button>
+        <!-- Request Phase Buttons -->
+        <div id="breakpointRequestButtons">
+          <button class="button" onclick="respondCustom()">Respond Custom</button>
+          <button class="button primary" onclick="forwardRequest()">Forward Request</button>
+        </div>
+        <!-- Response Phase Buttons -->
+        <div id="breakpointResponseButtons" style="display: none;">
+          <button class="button primary" onclick="sendResponse()">Send Response</button>
+        </div>
       </div>
     </div>
   </div>

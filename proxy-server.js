@@ -298,6 +298,7 @@ class ProxyServer {
         requestData,
         clientRes,
         breakpoint,
+        phase: 'request',
         timeoutId,
         timestamp: Date.now()
       });
@@ -486,6 +487,7 @@ class ProxyServer {
         requestData,
         clientRes,
         breakpoint,
+        phase: 'request',
         timeoutId,
         timestamp: Date.now()
       });
@@ -755,17 +757,129 @@ class ProxyServer {
     const { requestData, clientRes } = queued;
 
     if (customRequest) {
-      Object.assign(requestData, customRequest);
+      if (customRequest.body !== undefined) requestData.body = customRequest.body;
+      if (customRequest.headers) Object.assign(requestData.headers, customRequest.headers);
+      if (customRequest.method) requestData.method = customRequest.method;
+      if (customRequest.url) requestData.url = customRequest.url;
     }
 
     try {
-      this.forwardRequest(requestData, clientRes);
+      this.forwardRequestWithResponseBreakpoint(requestData, clientRes);
     } catch (error) {
       console.error(`Error forwarding request ${requestId}:`, error);
       if (!clientRes.headersSent) {
         clientRes.writeHead(500);
         clientRes.end('Internal Server Error: ' + error.message);
       }
+    }
+  }
+
+  forwardRequestWithResponseBreakpoint(requestData, clientRes) {
+    const parsedUrl = new URL(requestData.url);
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: requestData.method,
+      headers: requestData.headers
+    };
+
+    const protocol = parsedUrl.protocol === 'https:' ? https : http;
+
+    const proxyReq = protocol.request(options, (proxyRes) => {
+      this.collectBody(proxyRes).then(body => {
+        const responseData = {
+          id: requestData.id,
+          status: proxyRes.statusCode,
+          statusText: proxyRes.statusMessage,
+          headers: { ...proxyRes.headers },
+          body: body,
+          timestamp: new Date().toISOString()
+        };
+
+        // Check if there are WebSocket clients connected for phase 2
+        const hasClients = Array.from(this.webSocketClients).some(ws => ws.readyState === 1);
+
+        if (!hasClients) {
+          // No clients connected, auto-send response
+          this.broadcast({ type: 'traffic', request: requestData, response: responseData });
+          clientRes.writeHead(proxyRes.statusCode, proxyRes.headers);
+          clientRes.end(body);
+          return;
+        }
+
+        // Re-queue with response data for phase 2
+        const timeoutId = setTimeout(() => {
+          console.log(`Response breakpoint timeout for request ${requestData.id}, auto-continuing`);
+          this.continueResponse(requestData.id);
+        }, this.breakpointTimeout);
+
+        this.requestQueue.set(requestData.id, {
+          requestData,
+          clientRes,
+          responseData,
+          phase: 'response',
+          timeoutId,
+          timestamp: Date.now()
+        });
+
+        this.broadcast({
+          type: 'breakpointResponse',
+          requestId: requestData.id,
+          request: requestData,
+          response: responseData
+        });
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      console.error('Proxy request error:', err);
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(502);
+        clientRes.end('Bad Gateway');
+      }
+    });
+
+    if (requestData.body) {
+      proxyReq.write(requestData.body);
+    }
+    proxyReq.end();
+  }
+
+  continueResponse(requestId, customResponse) {
+    const queued = this.requestQueue.get(requestId);
+    if (!queued || queued.phase !== 'response') {
+      console.warn(`Response for request ${requestId} not found in queue`);
+      return;
+    }
+
+    if (queued.timeoutId) {
+      clearTimeout(queued.timeoutId);
+    }
+
+    this.requestQueue.delete(requestId);
+
+    const { requestData, clientRes } = queued;
+    let responseData = queued.responseData;
+
+    // Apply custom edits if provided
+    if (customResponse) {
+      if (customResponse.body !== undefined) responseData.body = customResponse.body;
+      if (customResponse.status !== undefined) responseData.status = customResponse.status;
+      if (customResponse.headers) Object.assign(responseData.headers, customResponse.headers);
+    }
+
+    this.broadcast({ type: 'traffic', request: requestData, response: responseData });
+
+    if (!clientRes.headersSent) {
+      // Remove content-encoding and content-length since we may have modified the body
+      const headers = { ...responseData.headers };
+      if (customResponse?.body !== undefined) {
+        delete headers['content-encoding'];
+        delete headers['content-length'];
+      }
+      clientRes.writeHead(responseData.status, headers);
+      clientRes.end(responseData.body);
     }
   }
 

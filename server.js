@@ -67,6 +67,9 @@ wss.on('connection', (ws) => {
         case 'respond':
           proxyServer.respondWithCustom(data.requestId, data.customResponse);
           break;
+        case 'continueResponse':
+          proxyServer.continueResponse(data.requestId, data.customResponse);
+          break;
         case 'setBreakpoint':
           const config = proxyServer.setBreakpoint(data.pattern, data.config);
           // Broadcast to all clients

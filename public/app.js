@@ -43,6 +43,9 @@ function handleWebSocketMessage(data) {
     case 'breakpoint':
       handleBreakpoint(data.request);
       break;
+    case 'breakpointResponse':
+      handleBreakpointResponse(data);
+      break;
     case 'breakpointSet':
       breakpoints.set(data.pattern, data.config);
       renderBreakpointList();
@@ -617,45 +620,130 @@ function renderMappingList() {
 
 function handleBreakpoint(request) {
   breakpointRequest = request;
-  
+
   const modal = document.getElementById('breakpointActionModal');
   const details = document.getElementById('breakpointRequestDetails');
-  
+
+  // Show request phase UI
+  document.getElementById('breakpointActionTitle').textContent = 'Breakpoint — Request';
+  document.getElementById('breakpointRequestPhase').style.display = '';
+  document.getElementById('breakpointResponsePhase').style.display = 'none';
+  document.getElementById('breakpointRequestButtons').style.display = '';
+  document.getElementById('breakpointResponseButtons').style.display = 'none';
+
   details.innerHTML = `
     <div class="detail-section">
       <h3>Request Details</h3>
       <div class="detail-grid">
-        <div class="detail-label">Method:</div>
-        <div class="detail-value">${request.method}</div>
-        <div class="detail-label">URL:</div>
-        <div class="detail-value">${request.url}</div>
+        <div class="detail-label">Method</div>
+        <div class="detail-value">${escapeHtml(request.method)}</div>
+        <div class="detail-label">URL</div>
+        <div class="detail-value">${escapeHtml(request.url)}</div>
       </div>
     </div>
   `;
-  
+
+  // Pre-fill request body
+  const bodyText = request.body || '';
+  document.getElementById('breakpointRequestBody').value = typeof bodyText === 'string' ? bodyText : '';
+
   modal.classList.add('show');
 }
 
-function continueRequest() {
+function handleBreakpointResponse(data) {
+  breakpointRequest = data.request;
+
+  const modal = document.getElementById('breakpointActionModal');
+  const details = document.getElementById('breakpointRequestDetails');
+
+  // Show response phase UI
+  document.getElementById('breakpointActionTitle').textContent = 'Breakpoint — Response';
+  document.getElementById('breakpointRequestPhase').style.display = 'none';
+  document.getElementById('breakpointResponsePhase').style.display = '';
+  document.getElementById('breakpointRequestButtons').style.display = 'none';
+  document.getElementById('breakpointResponseButtons').style.display = '';
+
+  const response = data.response;
+
+  details.innerHTML = `
+    <div class="detail-section">
+      <h3>Response Details</h3>
+      <div class="detail-grid">
+        <div class="detail-label">URL</div>
+        <div class="detail-value">${escapeHtml(data.request.url)}</div>
+        <div class="detail-label">Status</div>
+        <div class="detail-value">${escapeHtml(String(response.status))} ${escapeHtml(response.statusText || '')}</div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('breakpointResponseStatus').value = response.status;
+  const bodyText = response.body || '';
+  document.getElementById('breakpointResponseBody').value = typeof bodyText === 'string' ? bodyText : '';
+
+  modal.classList.add('show');
+}
+
+function forwardRequest() {
   if (!breakpointRequest) return;
-  
+
+  const editedBody = document.getElementById('breakpointRequestBody').value;
+  const customRequest = {};
+  if (editedBody !== (breakpointRequest.body || '')) {
+    customRequest.body = editedBody;
+  }
+
   ws.send(JSON.stringify({
     type: 'continue',
-    requestId: breakpointRequest.id
+    requestId: breakpointRequest.id,
+    customRequest: Object.keys(customRequest).length > 0 ? customRequest : undefined
   }));
-  
-  breakpointRequest = null;
-  closeModal('breakpointActionModal');
-  document.getElementById('customResponseBody').value = '';
-  document.getElementById('customStatusCode').value = '';
+
+  // Don't close modal — wait for response phase
+  // Reset request body field
+  document.getElementById('breakpointRequestBody').value = '';
+
+  // Show a waiting state
+  document.getElementById('breakpointActionTitle').textContent = 'Waiting for response...';
+  document.getElementById('breakpointRequestPhase').style.display = 'none';
+  document.getElementById('breakpointRequestButtons').style.display = 'none';
+  document.getElementById('breakpointRequestDetails').innerHTML = `
+    <div class="detail-section">
+      <h3>Request forwarded</h3>
+      <p style="color: var(--text-dim); font-size: 12px;">Waiting for response from origin server...</p>
+    </div>
+  `;
 }
 
 function respondCustom() {
   if (!breakpointRequest) return;
-  
-  const body = document.getElementById('customResponseBody').value.trim();
-  const status = parseInt(document.getElementById('customStatusCode').value) || 200;
-  
+
+  // Prompt for custom response inline — use the response phase fields
+  document.getElementById('breakpointActionTitle').textContent = 'Breakpoint — Custom Response';
+  document.getElementById('breakpointRequestPhase').style.display = 'none';
+  document.getElementById('breakpointResponsePhase').style.display = '';
+  document.getElementById('breakpointRequestButtons').style.display = 'none';
+  document.getElementById('breakpointResponseButtons').style.display = 'none';
+
+  document.getElementById('breakpointResponseStatus').value = '200';
+  document.getElementById('breakpointResponseBody').value = '{"message": "Custom response"}';
+
+  // Show a custom respond button
+  const footer = document.querySelector('#breakpointActionModal .modal-footer');
+  const customBtns = document.createElement('div');
+  customBtns.id = 'breakpointCustomButtons';
+  customBtns.innerHTML = `
+    <button class="button primary" onclick="sendCustomResponse()">Send Custom Response</button>
+  `;
+  footer.appendChild(customBtns);
+}
+
+function sendCustomResponse() {
+  if (!breakpointRequest) return;
+
+  const body = document.getElementById('breakpointResponseBody').value;
+  const status = parseInt(document.getElementById('breakpointResponseStatus').value) || 200;
+
   ws.send(JSON.stringify({
     type: 'respond',
     requestId: breakpointRequest.id,
@@ -666,11 +754,31 @@ function respondCustom() {
       body: body || '{"message": "Custom response"}'
     }
   }));
-  
+
   breakpointRequest = null;
   closeModal('breakpointActionModal');
-  document.getElementById('customResponseBody').value = '';
-  document.getElementById('customStatusCode').value = '';
+  // Clean up custom buttons
+  const customBtns = document.getElementById('breakpointCustomButtons');
+  if (customBtns) customBtns.remove();
+}
+
+function sendResponse() {
+  if (!breakpointRequest) return;
+
+  const body = document.getElementById('breakpointResponseBody').value;
+  const status = parseInt(document.getElementById('breakpointResponseStatus').value) || 200;
+
+  ws.send(JSON.stringify({
+    type: 'continueResponse',
+    requestId: breakpointRequest.id,
+    customResponse: {
+      status,
+      body
+    }
+  }));
+
+  breakpointRequest = null;
+  closeModal('breakpointActionModal');
 }
 
 // SSL Proxying functions
