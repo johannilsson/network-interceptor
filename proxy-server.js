@@ -130,8 +130,10 @@ class ProxyServer {
     this.breakpointTimeout = 120000; // 120 seconds (2 minutes)
     this.breakpointsFilePath = options.breakpointsFilePath || path.join(__dirname, 'breakpoints.json');
     this.sslProxyingFilePath = options.sslProxyingFilePath || path.join(__dirname, 'ssl-proxying.json');
+    this.mappingsFilePath = options.mappingsFilePath || path.join(__dirname, 'mappings.json');
     this.recording = null; // when active: { filename, stream }
     this.recordingsDir = path.join(__dirname, 'recordings');
+    this.mappedResponsesDir = path.join(__dirname, 'mapped-responses');
 
     const ca = generateCACertificate();
     this.caCert = ca.cert;
@@ -139,6 +141,7 @@ class ProxyServer {
 
     this.loadBreakpointsFromFile();
     this.loadSslProxyingFromFile();
+    this.loadMappingsFromFile();
   }
 
   start() {
@@ -686,9 +689,9 @@ class ProxyServer {
   }
 
   checkMapping(url) {
-    for (const [pattern, filePath] of this.mappings) {
-      if (this.matchPattern(url, pattern)) {
-        return filePath;
+    for (const [pattern, config] of this.mappings) {
+      if (config.enabled !== false && this.matchPattern(url, pattern)) {
+        return config;
       }
     }
     return null;
@@ -712,19 +715,30 @@ class ProxyServer {
     return url.includes(pattern);
   }
 
-  sendMappedResponse(clientRes, filePath, requestData) {
-    fs.readFile(filePath, (err, data) => {
+  sendMappedResponse(clientRes, config, requestData) {
+    fs.readFile(config.filePath, (err, data) => {
       if (err) {
         clientRes.writeHead(404);
         clientRes.end('Mapped file not found');
         return;
       }
 
+      // Detect content type from config or file extension
+      let contentType = config.contentType || 'application/json';
+      if (!config.contentType) {
+        const ext = path.extname(config.filePath).toLowerCase();
+        if (ext === '.html') contentType = 'text/html';
+        else if (ext === '.xml') contentType = 'application/xml';
+        else if (ext === '.txt') contentType = 'text/plain';
+        else if (ext === '.css') contentType = 'text/css';
+        else if (ext === '.js') contentType = 'application/javascript';
+      }
+
       const responseData = {
         id: requestData.id,
         status: 200,
         statusText: 'OK (Mapped)',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': contentType },
         body: data,
         timestamp: new Date().toISOString(),
         mapped: true
@@ -736,7 +750,7 @@ class ProxyServer {
         response: responseData
       });
 
-      clientRes.writeHead(200, { 'content-type': 'application/json' });
+      clientRes.writeHead(200, { 'content-type': contentType });
       clientRes.end(data);
     });
   }
@@ -1124,12 +1138,91 @@ class ProxyServer {
     return Array.from(this.sslProxyingList.values());
   }
 
-  setMapping(pattern, filePath) {
-    this.mappings.set(pattern, filePath);
+  loadMappingsFromFile() {
+    try {
+      if (fs.existsSync(this.mappingsFilePath)) {
+        const data = fs.readFileSync(this.mappingsFilePath, 'utf8');
+        const mappingsArray = JSON.parse(data);
+
+        for (const mapping of mappingsArray) {
+          if (!mapping.pattern || !mapping.filePath) continue;
+
+          const config = {
+            pattern: mapping.pattern,
+            filePath: mapping.filePath,
+            contentType: mapping.contentType || undefined,
+            enabled: mapping.enabled !== false,
+            createdAt: mapping.createdAt || new Date().toISOString()
+          };
+
+          this.mappings.set(mapping.pattern, config);
+        }
+
+        console.log(`Loaded ${this.mappings.size} mappings from file`);
+      }
+    } catch (error) {
+      console.error('Error loading mappings from file:', error.message);
+    }
+  }
+
+  saveMappingsToFile() {
+    try {
+      const mappingsArray = Array.from(this.mappings.values());
+      const data = JSON.stringify(mappingsArray, null, 2);
+      fs.writeFileSync(this.mappingsFilePath, data, 'utf8');
+    } catch (error) {
+      console.error('Error saving mappings to file:', error.message);
+    }
+  }
+
+  setMapping(pattern, filePath, options = {}) {
+    const existing = this.mappings.get(pattern);
+    const config = {
+      pattern,
+      filePath,
+      contentType: options.contentType || existing?.contentType || undefined,
+      enabled: options.enabled !== undefined ? options.enabled : (existing?.enabled !== false),
+      createdAt: existing?.createdAt || new Date().toISOString()
+    };
+    this.mappings.set(pattern, config);
+    this.saveMappingsToFile();
+    return config;
   }
 
   removeMapping(pattern) {
     this.mappings.delete(pattern);
+    this.saveMappingsToFile();
+  }
+
+  toggleMapping(pattern, enabled) {
+    const existing = this.mappings.get(pattern);
+    if (!existing) return null;
+
+    existing.enabled = enabled;
+    this.mappings.set(pattern, existing);
+    this.saveMappingsToFile();
+    return existing;
+  }
+
+  getMappings() {
+    return Array.from(this.mappings.values());
+  }
+
+  createMappingFromResponse(pattern, body, contentType) {
+    if (!fs.existsSync(this.mappedResponsesDir)) {
+      fs.mkdirSync(this.mappedResponsesDir, { recursive: true });
+    }
+
+    const sanitized = pattern.replace(/[^a-zA-Z0-9.-]/g, '-').slice(0, 80);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const ext = (contentType && contentType.includes('json')) ? 'json' : 'txt';
+    const filename = `${sanitized}-${timestamp}.${ext}`;
+    const filePath = path.join(this.mappedResponsesDir, filename);
+
+    fs.writeFileSync(filePath, body);
+
+    const config = this.setMapping(pattern, filePath, { contentType });
+    return config;
   }
 }
 

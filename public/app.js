@@ -120,11 +120,30 @@ function handleWebSocketMessage(data) {
       console.error('WebSocket error:', data.message);
       alert('Error: ' + data.message);
       break;
+    case 'mappingsList':
+      mappings.clear();
+      for (const m of data.mappings) {
+        mappings.set(m.pattern, m);
+      }
+      renderMappingList();
+      console.log('Loaded', data.mappings.length, 'mappings');
+      break;
     case 'mappingSet':
+      mappings.set(data.pattern, data.config);
+      renderMappingList();
       console.log('Mapping set:', data.pattern);
       break;
     case 'mappingRemoved':
+      mappings.delete(data.pattern);
+      renderMappingList();
       console.log('Mapping removed:', data.pattern);
+      break;
+    case 'mappingToggled':
+      if (data.config) {
+        mappings.set(data.pattern, data.config);
+        renderMappingList();
+      }
+      console.log('Mapping toggled:', data.pattern, data.enabled);
       break;
   }
 }
@@ -578,26 +597,33 @@ function addMapping() {
   const pattern = document.getElementById('mappingPattern').value.trim();
   const filePath = document.getElementById('mappingFilePath').value.trim();
   if (!pattern || !filePath) return;
-  
-  mappings.set(pattern, filePath);
+
   ws.send(JSON.stringify({
     type: 'setMapping',
     pattern,
     filePath
   }));
-  
+
   document.getElementById('mappingPattern').value = '';
   document.getElementById('mappingFilePath').value = '';
-  renderMappingList();
 }
 
 function removeMapping(pattern) {
-  mappings.delete(pattern);
   ws.send(JSON.stringify({
     type: 'removeMapping',
     pattern
   }));
-  renderMappingList();
+}
+
+function toggleMapping(pattern) {
+  const mapping = mappings.get(pattern);
+  if (!mapping) return;
+
+  ws.send(JSON.stringify({
+    type: 'toggleMapping',
+    pattern,
+    enabled: !(mapping.enabled !== false)
+  }));
 }
 
 function renderMappingList() {
@@ -606,16 +632,31 @@ function renderMappingList() {
     list.innerHTML = '<p style="color: var(--text-dim); margin-top: 1rem;">No mappings set</p>';
     return;
   }
-  
-  list.innerHTML = Array.from(mappings.entries()).map(([pattern, filePath]) => `
-    <li class="breakpoint-item">
-      <div>
-        <div class="breakpoint-pattern">${escapeHtml(pattern)}</div>
-        <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem;">${escapeHtml(filePath)}</div>
-      </div>
-      <button class="breakpoint-remove" onclick="removeMapping('${escapeHtml(pattern)}')">Remove</button>
-    </li>
-  `).join('');
+
+  list.innerHTML = Array.from(mappings.entries()).map(([pattern, config]) => {
+    const filePath = typeof config === 'string' ? config : config.filePath;
+    const isEnabled = config.enabled !== false;
+
+    return `
+      <li class="breakpoint-item ${!isEnabled ? 'breakpoint-disabled' : ''}">
+        <div class="breakpoint-info">
+          <div class="breakpoint-header">
+            <span class="breakpoint-pattern">${escapeHtml(pattern)}</span>
+            <span class="breakpoint-status-badge ${isEnabled ? 'active' : 'disabled'}">
+              ${isEnabled ? 'ACTIVE' : 'DISABLED'}
+            </span>
+          </div>
+          <div class="breakpoint-subtext">${escapeHtml(filePath)}</div>
+        </div>
+        <div class="breakpoint-actions">
+          <button class="breakpoint-toggle" onclick="toggleMapping('${escapeHtml(pattern)}')">
+            ${isEnabled ? 'Disable' : 'Enable'}
+          </button>
+          <button class="breakpoint-remove" onclick="removeMapping('${escapeHtml(pattern)}')">Remove</button>
+        </div>
+      </li>
+    `;
+  }).join('');
 }
 
 function handleBreakpoint(request) {
@@ -681,6 +722,13 @@ function handleBreakpointResponse(data) {
   const bodyText = response.body || '';
   document.getElementById('breakpointResponseBody').value = typeof bodyText === 'string' ? bodyText : '';
 
+  // Reset save-as-mapping container
+  const saveContainer = document.getElementById('saveAsMappingContainer');
+  if (saveContainer) {
+    saveContainer.innerHTML = '';
+    saveContainer.dataset.shown = 'false';
+  }
+
   modal.classList.add('show');
 }
 
@@ -728,11 +776,19 @@ function respondCustom() {
   document.getElementById('breakpointResponseStatus').value = '200';
   document.getElementById('breakpointResponseBody').value = '{"message": "Custom response"}';
 
+  // Reset save-as-mapping container
+  const saveContainer = document.getElementById('saveAsMappingContainer');
+  if (saveContainer) {
+    saveContainer.innerHTML = '';
+    saveContainer.dataset.shown = 'false';
+  }
+
   // Show a custom respond button
   const footer = document.querySelector('#breakpointActionModal .modal-footer');
   const customBtns = document.createElement('div');
   customBtns.id = 'breakpointCustomButtons';
   customBtns.innerHTML = `
+    <button class="button" onclick="showSaveAsMappingField()">Save as Mapping</button>
     <button class="button primary" onclick="sendCustomResponse()">Send Custom Response</button>
   `;
   footer.appendChild(customBtns);
@@ -779,6 +835,71 @@ function sendResponse() {
 
   breakpointRequest = null;
   closeModal('breakpointActionModal');
+}
+
+// Mapping helper functions
+function deriveWildcardPattern(url) {
+  try {
+    const parsed = new URL(url);
+    return '*' + parsed.hostname + parsed.pathname + '*';
+  } catch (e) {
+    return '*' + url + '*';
+  }
+}
+
+function saveAsMapping() {
+  if (!breakpointRequest) return;
+
+  const body = document.getElementById('breakpointResponseBody').value;
+  const status = parseInt(document.getElementById('breakpointResponseStatus').value) || 200;
+  const patternInput = document.getElementById('saveAsMappingPattern');
+  const pattern = patternInput ? patternInput.value.trim() : deriveWildcardPattern(breakpointRequest.url);
+
+  if (!pattern) {
+    alert('Pattern is required');
+    return;
+  }
+
+  // Guess content type from body
+  let contentType = 'text/plain';
+  try {
+    JSON.parse(body);
+    contentType = 'application/json';
+  } catch (e) {
+    // not JSON
+  }
+
+  ws.send(JSON.stringify({
+    type: 'createMappingFromResponse',
+    pattern,
+    body,
+    contentType
+  }));
+
+  // Show confirmation
+  if (patternInput) {
+    const container = patternInput.closest('.form-group');
+    if (container) {
+      container.innerHTML = `<div style="color: var(--status-2xx); font-size: 12px;">Saved mapping for ${escapeHtml(pattern)}</div>`;
+    }
+  }
+}
+
+function showSaveAsMappingField() {
+  const container = document.getElementById('saveAsMappingContainer');
+  if (!container || container.dataset.shown === 'true') return;
+  container.dataset.shown = 'true';
+
+  const pattern = breakpointRequest ? deriveWildcardPattern(breakpointRequest.url) : '';
+  container.innerHTML = `
+    <div class="form-group" style="margin-top: 12px;">
+      <label class="form-label">Mapping Pattern</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" class="form-input" id="saveAsMappingPattern" value="${escapeHtml(pattern)}" style="flex: 1;">
+        <button class="button primary" onclick="saveAsMapping()">Save</button>
+      </div>
+    </div>
+  `;
 }
 
 // SSL Proxying functions

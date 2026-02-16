@@ -49,6 +49,10 @@ wss.on('connection', (ws) => {
   const sslProxyingList = proxyServer.getSslProxyingList();
   ws.send(JSON.stringify({ type: 'sslProxyingList', patterns: sslProxyingList }));
 
+  // Send initial mappings list
+  const mappingsList = proxyServer.getMappings();
+  ws.send(JSON.stringify({ type: 'mappingsList', mappings: mappingsList }));
+
   // Send current recording state
   ws.send(JSON.stringify({
     type: 'recordingState',
@@ -168,14 +172,50 @@ wss.on('connection', (ws) => {
           });
           break;
         }
-        case 'setMapping':
-          proxyServer.setMapping(data.pattern, data.filePath);
-          ws.send(JSON.stringify({ type: 'mappingSet', pattern: data.pattern }));
+        case 'setMapping': {
+          const mappingConfig = proxyServer.setMapping(data.pattern, data.filePath, data.options || {});
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'mappingSet', pattern: data.pattern, config: mappingConfig }));
+            }
+          });
           break;
+        }
         case 'removeMapping':
           proxyServer.removeMapping(data.pattern);
-          ws.send(JSON.stringify({ type: 'mappingRemoved', pattern: data.pattern }));
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'mappingRemoved', pattern: data.pattern }));
+            }
+          });
           break;
+        case 'toggleMapping': {
+          const toggledMapping = proxyServer.toggleMapping(data.pattern, data.enabled);
+          if (toggledMapping) {
+            wss.clients.forEach(client => {
+              if (client.readyState === 1) {
+                client.send(JSON.stringify({ type: 'mappingToggled', pattern: data.pattern, enabled: data.enabled, config: toggledMapping }));
+              }
+            });
+          } else {
+            ws.send(JSON.stringify({ type: 'error', message: 'Mapping not found' }));
+          }
+          break;
+        }
+        case 'getMappings': {
+          const allMappings = proxyServer.getMappings();
+          ws.send(JSON.stringify({ type: 'mappingsList', mappings: allMappings }));
+          break;
+        }
+        case 'createMappingFromResponse': {
+          const newMapping = proxyServer.createMappingFromResponse(data.pattern, data.body, data.contentType);
+          wss.clients.forEach(client => {
+            if (client.readyState === 1) {
+              client.send(JSON.stringify({ type: 'mappingSet', pattern: data.pattern, config: newMapping }));
+            }
+          });
+          break;
+        }
       }
     } catch (err) {
       console.error('WebSocket message error:', err);
