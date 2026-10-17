@@ -1,0 +1,20 @@
+{
+  "_comment": "Advisories that `npm run audit:check` tolerates. Each entry needs a reason and an expiry date; once expired it fails CI again and must be re-reviewed. Only list advisories with no non-breaking fix.",
+  "advisories": {
+    "GHSA-86w9-cpqp-85rv": {
+      "package": "node-forge",
+      "reason": "No patched release. The flaw is in RSA PKCS#1 v1.5 signature verification; proxy-server.js only generates keys, signs certificates and parses its own CA from disk, and never verifies signatures.",
+      "expires": "2027-01-15"
+    },
+    "GHSA-vfj7-8cjw-p6xm": {
+      "package": "braces",
+      "reason": "No patched release (affects all versions). Dev-only, via nodemon -> chokidar; it only expands glob patterns from local nodemon config, never untrusted input. The audit's suggested fix is a downgrade to nodemon 1.14.",
+      "expires": "2027-01-15"
+    },
+    "GHSA-hp3w-g68c-fv3c": {
+      "package": "sprintf-js",
+      "reason": "No patched release (affects all versions). Dev-only, via jest -> babel-plugin-istanbul -> js-yaml@3 -> argparse@1; only formats jest's own coverage config. The audit's suggested fix is a downgrade to jest 25.",
+      "expires": "2027-01-15"
+    }
+  }
+}

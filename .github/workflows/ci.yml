@@ -23,8 +23,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Fails on any advisory not listed (with a reason and expiry date) in
+      # audit-allowlist.json. See scripts/audit-check.js.
       - name: Audit dependencies
-        run: npm audit
+        run: npm run audit:check
 
       - name: Run tests with coverage
         run: npm run test:coverage
