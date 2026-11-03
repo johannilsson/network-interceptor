@@ -29,3 +29,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Test coverage output
+coverage/
