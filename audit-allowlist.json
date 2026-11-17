@@ -1,19 +1,14 @@
 {
   "_comment": "Advisories that `npm run audit:check` tolerates. Each entry needs a reason and an expiry date; once expired it fails CI again and must be re-reviewed. Only list advisories with no non-breaking fix.",
   "advisories": {
-    "GHSA-86w9-cpqp-85rv": {
-      "package": "node-forge",
-      "reason": "No patched release. The flaw is in RSA PKCS#1 v1.5 signature verification; proxy-server.js only generates keys, signs certificates and parses its own CA from disk, and never verifies signatures.",
+    "GHSA-3g3m-2fjr-6pw4": {
+      "package": "glob",
+      "reason": "Fixed only in glob 14.0.2+, a major bump jest 30 does not accept (the audit's suggested fix is a downgrade to jest 29). Dev-only, via jest's coverage and test discovery; it globs local paths from the repo's own config and never uses AbortSignal timeouts on untrusted input.",
       "expires": "2027-01-15"
     },
-    "GHSA-vfj7-8cjw-p6xm": {
-      "package": "braces",
-      "reason": "No patched release (affects all versions). Dev-only, via nodemon -> chokidar; it only expands glob patterns from local nodemon config, never untrusted input. The audit's suggested fix is a downgrade to nodemon 1.14.",
-      "expires": "2027-01-15"
-    },
-    "GHSA-hp3w-g68c-fv3c": {
-      "package": "sprintf-js",
-      "reason": "No patched release (affects all versions). Dev-only, via jest -> babel-plugin-istanbul -> js-yaml@3 -> argparse@1; only formats jest's own coverage config. The audit's suggested fix is a downgrade to jest 25.",
+    "GHSA-g3hv-75wg-m249": {
+      "package": "minimatch",
+      "reason": "Fixed only in minimatch 11.0.1+, a major bump jest 30 and nodemon do not accept (the audit's suggested fix is a downgrade to jest 29). Dev-only; patterns come from jest and nodemon config in this repo, never from untrusted input.",
       "expires": "2027-01-15"
     }
   }
